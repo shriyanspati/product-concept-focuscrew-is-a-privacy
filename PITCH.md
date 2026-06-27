@@ -2,40 +2,64 @@
 
 ## 30-Second Pitch
 
-Soryvo is a private AI study room that helps groups regain momentum. Typical timers only ask whether time passed. Soryvo helps a real group notice shared drift, run a quick reset, and continue without public surveillance or embarrassment.
+Soryvo is a private AI study room that helps friends catch a fading study session before it turns into a wasted night. Unlike a normal timer that only counts down, Soryvo helps a group stay in rhythm, notice when momentum is slipping, and reset together without publicly calling anyone out. During focus blocks, friends work quietly. During planned breaks, they can talk instead of disappearing into phone scrolling.
+
+**Lock in. Break. Come back.**
 
 ## 90-Second Demo Script
 
-1. Start in Judge Demo Mode with room `CREW42`.
-2. Show a strong shared focus score and realistic student goals.
-3. Explain that Soryvo uses opt-in focus signals and broad statuses, never stored screenshots, URLs, or individual callouts.
-4. Click `Simulate Group Drift`.
-5. Show the anonymous recovery card and the AI coach suggestion.
-6. Click `Start 3-Minute Reset`.
-7. Click `Back on Track` to show recovery without naming anyone.
-8. Open `Focus Check`, show private task-alignment guidance, and point out that typed answers are not shown to the group.
-9. End the session and show the report.
+Start in the sample room, `CREW42`.
+
+Show the shared focus block, the group’s individual study goals, and the room’s overall momentum state. Explain that Soryvo is designed for accountability without surveillance: students can use private Focus Checks and opt-in focus signals, but the room never sees private answers, saved screenshots, URLs, or individual activity details.
+
+Click **Simulate Group Drift**.
+
+Show the anonymous recovery prompt and explain that Soryvo does not say who is struggling or distracted. Instead, it gives the group a chance to reset together.
+
+Click **Start 3-Minute Reset**.
+
+Explain that the reset is meant to stop a small distraction from becoming a lost study block. Then click **Back on Track** to show the room recovering without blame or public callouts.
+
+Open **Focus Check** and show the private task-alignment guidance. Point out that responses stay private and are never shown to other room members.
+
+Finally, start a planned break and show that Break Lounge enables microphones, giving friends a way to talk or decompress together instead of automatically scrolling on their phones. End the session and show the room summary.
 
 ## Best Original Idea
 
-Soryvo is built around group recovery, not individual surveillance. The invention is shared momentum support: anonymous broad statuses, aggregate focus score, and quick reset prompts that help the room recover together.
+Most study tools treat focus as an individual problem. Soryvo treats it as a group rhythm.
+
+Its core idea is **shared recovery**: when the room starts drifting, Soryvo uses broad anonymous signals and quick reset prompts to help everyone return to work together. It does not turn classmates into monitors or make one person the target. The product is built around making recovery easy, private, and social.
 
 ## Best Social Value
 
-Students can support each other without becoming monitors. Soryvo treats breaks as intentional, avoids shame language, and never claims to diagnose or treat attention or mental-health conditions.
+Soryvo gives students a healthier way to hold each other accountable.
+
+Instead of rewarding pressure, shame, or public callouts, it encourages friends to support one another through shared focus blocks, intentional breaks, and anonymous reset moments. Students can talk during planned breaks, recharge together, and return to work with less friction. Soryvo supports study flow and attention recovery, but never claims to diagnose, treat, or measure mental-health conditions.
 
 ## Best UI/UX
 
-The interface feels like a premium study journal: paper-white surfaces, charcoal typography, restrained editorial red, clear room state, and no cluttered surveillance dashboard.
+Soryvo is designed to feel calm, clear, and intentional rather than like a crowded productivity dashboard.
+
+The interface uses warm paper-white surfaces, charcoal typography, restrained editorial red, and simple room states that make the next action obvious. The design avoids clutter, aggressive alerts, and surveillance-style visuals. Important moments, such as a reset prompt or a break beginning, feel noticeable without becoming stressful.
 
 ## Real Multiplayer Value
 
-Real rooms matter because the product is social. Supabase Realtime lets participants join the same room, see live broad statuses, share reset moments, and keep one shared timer.
+Soryvo matters most when real friends are in the same room.
+
+Supabase Realtime allows participants to join one shared study room, see live broad statuses, stay synchronized on the same timer, experience reset moments together, and move into breaks at the same time. This makes Soryvo more than a solo timer with extra features: it is a shared study environment built around group momentum.
 
 ## AI Usage
 
-AI is used for short, private, task-alignment guidance and supportive reset prompts. If `OPENAI_API_KEY` is missing, deterministic local rules provide the same demo flow. AI receives only task goals, broad status/category labels, timer context, and anonymous aggregate signals.
+Soryvo uses AI to provide short, private task-alignment guidance and supportive recovery prompts.
+
+AI can help turn a vague moment of distraction or frustration into a practical next step, such as: *“What is one thing you can finish in five minutes?”* AI guidance is private and is never used to publicly rank, shame, or label students.
+
+When an `OPENAI_API_KEY` is not configured, Soryvo uses deterministic local rules so the sample room and core recovery flow still work. Optional cloud-based screen analysis, when enabled, requires separate user consent and is designed only for one-time task-alignment feedback.
 
 ## Privacy Protections
 
-Soryvo does not use hidden screen surveillance. Optional Screen Check requires an explicit browser picker and separate cloud-analysis consent. Frames are never saved, logged, sent to room infrastructure, or shown to members. Soryvo never captures URLs, browser history, keystrokes, private messages, or typed Focus Check answers. Public room views show only broad statuses and strictly gated anonymous recovery invitations.
+Soryvo is built around consent and minimal data collection.
+
+It does not use hidden screen surveillance. Optional Screen Check requires the user to click enable, choose what to share through the browser’s screen picker, and separately consent before any cloud-based analysis occurs. Screen frames are never stored, logged, shown to room members, sent through room infrastructure, or added to the user’s study history.
+
+Soryvo does not capture browser history, URLs, page titles, keystrokes, private messages, typed Focus Check answers, webcam recordings, or microphone recordings. Public room views only show broad study statuses and carefully gated anonymous recovery invitations.
