@@ -1,91 +1,148 @@
 # Soryvo
 
-Soryvo is a private AI study room that helps groups regain momentum without public surveillance or individual callouts.
+Soryvo is a private AI study room that helps friends stay focused, recover from distractions, and return to work together without public surveillance or individual callouts.
+
+> **Lock in. Break. Come back.**
 
 ## Product Summary
 
-Students enter a room, set a clear goal, study together, and use anonymous broad statuses plus private AI-assisted guidance to recover when group momentum slips.
+Students create or join a study room, set an individual goal, and follow the same shared focus timer. During focus blocks, the room stays quiet so everyone can work without constant conversation or distractions.
+
+Soryvo uses private Focus Checks, optional Screen Check support, broad anonymous statuses, and group reset prompts to help students notice when momentum is slipping. Instead of publicly naming someone who is distracted, Soryvo encourages the whole room to reset together.
+
+During planned breaks, the Break Lounge opens microphones so friends can talk, laugh, ask quick questions, or decompress together instead of immediately getting pulled into endless phone scrolling.
 
 ## Design System
 
-Soryvo uses a paper-white and editorial-red visual system:
+Soryvo uses a warm paper-white and editorial-red visual system that feels more like a shared study space than a generic AI dashboard.
 
-- Page: `#F7F6F3`
-- Warm section background: `#F1EFEA`
-- Surface: `#FFFFFF`
-- Borders: `#DCD8D1`
-- Text: `#171716`
-- Muted text: `#706D68`
-- Accent red: `#A6232B`
+* Page: `#F7F6F3`
+* Warm section background: `#F1EFEA`
+* Surface: `#FFFFFF`
+* Borders: `#DCD8D1`
+* Main text: `#171716`
+* Muted text: `#706D68`
+* Accent red: `#A6232B`
 
-Red is intentionally sparse: primary CTAs, focus meter progress, input focus rings, small active indicators, and the Soryvo mark.
+Red is intentionally sparse and only appears in important moments: primary buttons, active timer progress, selected controls, input focus rings, small live indicators, and the Soryvo mark.
 
 ## Real Room Behavior
 
-With Supabase configured, normal rooms are real multiplayer rooms:
+With Supabase configured, normal rooms are real multiplayer study rooms:
 
-- Verified passwordless email sign-in is required before creating or joining a true live room.
-- Room creation happens through the `create_live_room` RPC.
-- Joining happens through the `join_live_room` RPC.
-- Participants, broad statuses, room state, shared breaks, and room events update with Supabase Realtime.
-- Real rooms show only real participants, never seeded demo members.
-- Invite links use `/room/[code]`.
+* Passwordless email sign-in is required before creating or joining a live room.
+* Room creation happens through the `create_live_room` RPC.
+* Joining happens through the `join_live_room` RPC.
+* Participants, shared timer state, room phases, broad statuses, breaks, and room events update through Supabase Realtime.
+* Real rooms only show real participants and never include seeded demo users.
+* Invite links use `/room/[code]`.
+* Hosts can end a session for everyone, while participants can leave without ending the room.
+* Shared Pomodoro sessions stay synchronized across everyone in the room.
 
-Without Supabase credentials, normal rooms show `Local Preview Mode` and do not pretend to be multiplayer. Judge Demo Mode remains fully functional and does not require email.
+Without Supabase credentials, normal rooms run in clearly labeled `Local Preview Mode`. They do not pretend to be live multiplayer rooms or show fake classmates.
 
 ## Focus Check
 
-Focus Check is a private self-check for task alignment. It asks whether the user is still working toward their goal and can provide a short private suggestion.
+Focus Check is a private self-check that helps students reconnect with their goal when they feel stuck, distracted, or unsure what to do next.
+
+It can ask simple questions such as:
+
+> “What is the next thing you can finish in five minutes?”
+
+Focus Check may provide a short private suggestion, but it never publicly labels someone as distracted or exposes their response to the group.
 
 Focus Check never stores typed answers in Supabase. Only these broad fields may be stored:
 
-- `last_focus_check_at`
-- `last_focus_check_state`
-- public participant status: focused, taking a break, needs a reset, or not sharing activity
+* `last_focus_check_at`
+* `last_focus_check_state`
+* Public participant status: `focused`, `taking_break`, `needs_reset`, or `not_sharing_activity`
 
-The group never sees typed answers, check frequency, confidence, activity categories, or AI messages.
+The group never sees typed answers, activity confidence, private AI messages, check frequency, or personal focus details.
 
 ## Optional Screen Check
 
-Screen Check is off by default and begins only after the user chooses expected study contexts, clicks `Enable Screen Check`, and approves the browser screen picker. The UI says active only after the returned track is live and a fresh video frame has arrived.
+Screen Check is off by default and only begins after a user selects expected study contexts, clicks `Enable Screen Check`, and approves the browser’s screen-sharing picker.
 
-- Local heuristic mode never encodes or uploads a frame. It uses the declared goal, expected contexts, private Focus Check state, and optional broad activity category.
-- Cloud vision mode appears only when `OPENAI_API_KEY` is configured and requires separate consent. It sends one maximum `320x180` JPEG to `/api/screen-check` for one-time analysis.
-- Frames are never stored, logged, cached, written to React state, sent to Supabase/LiveKit, or shown to the room.
-- The offscreen canvas is cleared and reduced to `1x1` immediately after every sample. Tracks, timers, video sources, and canvas memory are cleared on stop, track end, stale frames, shared break, session end, and component unmount.
+The interface only shows Screen Check as active after the browser returns a live video track and the app receives a fresh frame.
 
-Accountability Pulse stores only a public opt-in boolean and an empty anonymous room event. It requires unanimous current-room opt-in, at least three active members, focus phase, a qualifying reset request, and a ten-minute cooldown.
+* Local heuristic mode does not upload, save, encode, or transmit screen frames.
+* Local mode uses a user’s declared goal, expected contexts, private Focus Check state, and optional broad activity category.
+* Cloud vision mode only appears when `OPENAI_API_KEY` is configured and requires separate consent.
+* Cloud vision mode sends one low-resolution frame, capped at `320x180`, to `/api/screen-check` for one-time analysis.
+* Frames are never saved, logged, cached, placed in React state, sent to Supabase, sent to LiveKit, or shown to anyone in the room.
+* The offscreen canvas is cleared and reduced to `1x1` immediately after each sample.
+* Screen capture stops when the user clicks stop, the browser track ends, a planned break begins, the session ends, or the component unmounts.
+
+Screen Check is designed to support accountability, not prove that someone is working perfectly.
+
+## Accountability Pulse
+
+Accountability Pulse is a room-level reset feature designed to encourage the group without calling out a specific person.
+
+It only activates when:
+
+* Every current participant has opted in.
+* At least three active members are in the room.
+* The room is currently in a focus phase.
+* A qualifying private reset request has occurred.
+* The cooldown period has passed.
+
+When group momentum drops, Soryvo can show an anonymous message such as:
+
+> “Momentum dip in the room. Want a 90-second lock-in?”
+
+The room never sees who triggered the reset, what they were doing, or what appeared on their screen.
+
+## Break Lounge
+
+Break Lounge is available only during planned breaks.
+
+* Microphones can be enabled during breaks.
+* Optional video can be enabled by the user.
+* Screen sharing is not part of Break Lounge.
+* Calls are never recorded or transcribed.
+* Microphones and cameras are disabled again when the next focus block begins.
+
+The goal is to make breaks social and intentional, so friends can recharge together instead of immediately losing the break to scrolling.
 
 ## Privacy Boundaries
 
 Soryvo never stores or records:
 
-- Screenshots
-- Screen recordings
-- Webcam or microphone
-- Keystrokes
-- Passwords
-- Private messages
-- Browser history
-- URLs or page titles
-- Typed Focus Check answers
-- Raw activity-category signals
+* Screenshots
+* Screen recordings
+* Webcam recordings
+* Microphone recordings
+* Keystrokes
+* Passwords
+* Private messages
+* Browser history
+* URLs or page titles
+* Typed Focus Check answers
+* Raw activity-category signals
+* Break Lounge conversations
 
-In Cloud vision mode only, a separately consented low-resolution frame exists temporarily in request memory for one-time analysis. It is discarded after the request and is never persisted.
+In Cloud Vision mode only, a separately consented low-resolution frame exists temporarily in request memory for one-time analysis. It is discarded after the request and is never persisted.
 
-Soryvo supports study flow and attention recovery. It is not a medical or mental-health diagnostic tool.
+Soryvo supports study flow, shared accountability, and attention recovery. It is not a medical, mental-health, or academic diagnostic tool.
 
 ## Tech Stack
 
-- Next.js App Router
-- TypeScript strict mode
-- Tailwind CSS
-- Lucide React
-- Framer Motion
-- Recharts
-- Supabase Realtime and passwordless email auth
-- LocalStorage for local preferences and demo persistence
-- Optional server-side OpenAI integration with deterministic fallback
+* Next.js App Router
+* React
+* TypeScript strict mode
+* Tailwind CSS
+* Lucide React
+* Framer Motion
+* Recharts
+* Supabase PostgreSQL
+* Supabase Realtime
+* Supabase passwordless email authentication
+* LiveKit
+* LocalStorage for local preferences and demo persistence
+* Optional server-side OpenAI integration with deterministic fallback
+* Vercel deployment
+* Codex and Claude for AI-assisted prototyping and debugging
 
 ## Local Setup
 
@@ -94,34 +151,52 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+Open:
+
+```txt
+http://localhost:3000
+```
 
 ## Environment Variables
 
-Create `.env.local` when using live rooms or OpenAI:
+Create `.env.local` when using live rooms, Break Lounge, or optional OpenAI features:
 
-```bash
+```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_supabase_publishable_key
-# NEXT_PUBLIC_SUPABASE_ANON_KEY is still supported as a fallback
+
+# Legacy fallback, only if your project still uses it
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+
 NEXT_PUBLIC_LIVEKIT_URL=your_livekit_cloud_url
 LIVEKIT_API_KEY=your_livekit_api_key
 LIVEKIT_API_SECRET=your_livekit_api_secret
+
 OPENAI_API_KEY=optional_openai_key
 OPENAI_MODEL=gpt-4.1-mini
 OPENAI_VISION_MODEL=gpt-4.1-mini
 ```
 
-`OPENAI_API_KEY` is optional. The app works with local deterministic coaching and Local heuristic Screen Check when it is missing. `OPENAI_VISION_MODEL` is optional and falls back to `OPENAI_MODEL`.
-LiveKit variables are optional for local demos; real Break Lounge audio/video calls need all three LiveKit values.
+`OPENAI_API_KEY` is optional. When it is missing, Soryvo uses local deterministic coaching and local Screen Check logic.
+
+`OPENAI_VISION_MODEL` is optional and falls back to `OPENAI_MODEL`.
+
+LiveKit variables are optional for local demos, but real Break Lounge audio and video calls require all three LiveKit values.
+
+Never commit `.env.local`, API keys, or service-role keys to GitHub.
 
 ## Supabase Setup
 
 1. Create a Supabase project.
 2. In Authentication settings, enable Email Auth.
-3. Turn on email confirmation / magic-link sign-in. No password provider is needed for Soryvo.
-4. Set the Auth Site URL to `http://localhost:3000` for local development, and to your deployed domain in production.
-5. Add these redirect URLs in Supabase Auth:
+3. Turn on email confirmation or magic-link sign-in.
+4. Set the Auth Site URL to:
+
+```txt
+http://localhost:3000
+```
+
+5. Add these redirect URLs:
 
 ```txt
 http://localhost:3000/auth/callback
@@ -130,45 +205,79 @@ https://YOUR_DEPLOYED_DOMAIN/auth/callback
 
 6. Open the Supabase SQL editor.
 7. Run `supabase/schema.sql`.
-8. Copy the project URL and publishable key into `.env.local`:
+8. Add the project URL and publishable key to `.env.local`:
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 ```
 
-9. Start the app with `npm run dev`.
+9. Restart the development server:
 
-The schema enables RLS, uses authenticated `auth.uid()` membership checks, and exposes narrowly scoped room RPCs: `create_live_room`, `join_live_room`, `start_pomodoro`, `pause_pomodoro`, `resume_pomodoro`, `start_break`, `end_break`, `end_room`, and `heartbeat_room_member`.
+```bash
+npm run dev
+```
 
-Do not add a Supabase service-role key to `.env.local` or any frontend environment. Soryvo only needs the publishable key for this passwordless email flow. Email addresses stay in Supabase Auth and are not written into public room tables; room participants see display names, goals, and broad study statuses only.
+The schema uses Row Level Security, authenticated `auth.uid()` membership checks, and narrowly scoped room RPCs:
+
+* `create_live_room`
+* `join_live_room`
+* `start_pomodoro`
+* `pause_pomodoro`
+* `resume_pomodoro`
+* `start_break`
+* `end_break`
+* `end_room`
+* `heartbeat_room_member`
+
+Do not add a Supabase service-role key to `.env.local` or any frontend environment. Soryvo only needs the publishable key for its passwordless sign-in flow.
+
+Email addresses stay inside Supabase Auth and are not written into public room tables. Participants only see display names, goals, and broad study statuses.
 
 ## LiveKit Setup
 
 1. Create a LiveKit Cloud project.
 2. Copy the project URL into `NEXT_PUBLIC_LIVEKIT_URL`.
-3. Create an API key and secret for `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`.
-4. Restart the app.
+3. Create an API key and secret.
+4. Add them to `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`.
+5. Restart the app.
 
-Break Lounge tokens are generated only by `app/api/livekit/token/route.ts`, only for room members, and only while the room phase is `break`.
+Break Lounge tokens are generated only through:
+
+```txt
+app/api/livekit/token/route.ts
+```
+
+Tokens are only issued to active room members while the room phase is `break`.
 
 ## Judge Demo Mode
 
-Judge Demo Mode uses deterministic seeded members from `lib/demoData.ts` and does not write demo users into Supabase tables.
+Judge Demo Mode provides a fully functional sample room without requiring email sign-in or Supabase setup.
+
+It uses deterministic seeded participants from:
+
+```txt
+lib/demoData.ts
+```
+
+Demo users are never written into Supabase tables.
 
 Demo flow:
 
-1. Open `/room/CREW42` or choose Judge Demo Mode on `/room`.
-2. Accept consent.
-3. Click `Simulate Group Drift`.
-4. Start the anonymous three-minute reset.
-5. Click `Back on Track`.
-6. Use the Focus Check demo controls.
-7. End the session to view the report.
+1. Open `/room/CREW42` or select `Try a Sample Room`.
+2. Accept the privacy consent screen.
+3. Start a shared focus block.
+4. Click `Simulate Group Drift`.
+5. Trigger the anonymous reset flow.
+6. Use the private Focus Check controls.
+7. Start a planned break and open Break Lounge.
+8. End the session to view the summary.
 
 ## Local Preview Mode
 
-When Supabase variables are missing, normal rooms are local-only. The UI labels this clearly and does not show fake friends or a misleading live invite.
+When Supabase environment variables are missing, normal rooms run locally only.
+
+The interface clearly labels this as `Local Preview Mode` and does not show fake friends, fake room syncing, or misleading live invite behavior.
 
 ## Exact Run Command
 
