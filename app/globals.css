@@ -1,0 +1,119 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --canvas: #EEEAE3;
+  --canvas-soft: #F5F1EA;
+  --paper: #FFFDF9;
+  --paper-muted: #F8F4ED;
+  --paper-deep: #E7E0D5;
+  --line: #D2C9BC;
+  --line-strong: #BEB3A5;
+  --ink: #1C1A17;
+  --ink-soft: #4F4A43;
+  --ink-muted: #746D64;
+  --red: #A6232B;
+  --red-hover: #821820;
+  --red-soft: #F2DDDB;
+  --red-deep: #671117;
+  --stone: #B8AA98;
+  --neutral: #DDD6CD;
+  --radius-card: 12px;
+  --radius-control: 12px;
+  --radius-small: 10px;
+  --page: var(--canvas);
+  --page-warm: var(--canvas-soft);
+  --surface: var(--paper);
+  --surface-soft: var(--paper-muted);
+  --surface-muted: var(--paper-deep);
+  --surface-hover: var(--paper-muted);
+  --border: var(--line);
+  --border-strong: var(--line-strong);
+  --text-primary: var(--ink);
+  --text-secondary: var(--ink-soft);
+  --text-muted: var(--ink-muted);
+  --accent-red: var(--red);
+  --accent-red-hover: var(--red-hover);
+  --accent-red-deep: var(--red-deep);
+  --accent-red-soft: var(--red-soft);
+  --focus-ink: var(--ink);
+  --break-stone: var(--stone);
+  --neutral-soft: var(--neutral);
+  --background: var(--canvas);
+  --focus-accent: var(--red);
+  --focus-accent-dark: var(--red-hover);
+  --break-accent: var(--stone);
+  --break-accent-dark: #9C8E7D;
+  --alert-accent: var(--red);
+  --alert-accent-dark: var(--red-deep);
+  color-scheme: light;
+  background: var(--background);
+  color: var(--text-primary);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  overflow-x: clip;
+  background: var(--background);
+  color: var(--text-primary);
+  font-family: var(--font-body), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a {
+  transition-duration: 200ms;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent-red);
+  outline-offset: 3px;
+}
+
+.surface {
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.dialog-surface {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-control);
+  box-shadow: 0 18px 44px rgba(70, 59, 44, 0.14);
+}
+
+.field-surface {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-control);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
