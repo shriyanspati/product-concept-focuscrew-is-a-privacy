@@ -1,24 +1,37 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Room, RoomPhase } from "@/lib/types";
 
 type UseSyncedPomodoroInput = {
   room: Room | null | undefined;
   isCreator: boolean;
   onPhaseExpired?: (phase: RoomPhase) => Promise<void> | void;
+  disabled?: boolean;
 };
 
-export function useSyncedPomodoro({ room, isCreator, onPhaseExpired }: UseSyncedPomodoroInput) {
+export function useSyncedPomodoro({ room, isCreator, onPhaseExpired, disabled = false }: UseSyncedPomodoroInput) {
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const expireHandledRef = useRef<string | null>(null);
+  const intervalRef = useRef<number | null>(null);
+
+  const clearTimer = useCallback(() => {
+    if (intervalRef.current !== null) {
+      window.clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    expireHandledRef.current = "stopped";
+  }, []);
 
   useEffect(() => {
-    if (!room?.phaseEndsAt || room.phase === "lobby" || room.phase === "ended") {
+    clearTimer();
+
+    if (disabled || !room?.phaseEndsAt || room.phase === "lobby" || room.phase === "ended") {
       setRemainingSeconds(null);
-      expireHandledRef.current = null;
       return;
     }
+
+    expireHandledRef.current = null;
 
     const tick = () => {
       if (!room.isRunning) {
@@ -38,9 +51,9 @@ export function useSyncedPomodoro({ room, isCreator, onPhaseExpired }: UseSynced
     };
 
     tick();
-    const interval = window.setInterval(tick, 1000);
-    return () => window.clearInterval(interval);
-  }, [isCreator, onPhaseExpired, room?.cycleNumber, room?.id, room?.isRunning, room?.phase, room?.phaseEndsAt]);
+    intervalRef.current = window.setInterval(tick, 1000);
+    return clearTimer;
+  }, [clearTimer, disabled, isCreator, onPhaseExpired, room?.cycleNumber, room?.id, room?.isRunning, room?.phase, room?.phaseEndsAt]);
 
   const totalSeconds = useMemo(() => {
     if (!room) {
@@ -71,7 +84,8 @@ export function useSyncedPomodoro({ room, isCreator, onPhaseExpired }: UseSynced
     remainingSeconds,
     remainingLabel: remainingSeconds === null ? "--:--" : formatTimer(remainingSeconds),
     progress,
-    label: getPhaseLabel(room?.phase ?? "lobby", room?.isRunning ?? false)
+    label: getPhaseLabel(room?.phase ?? "lobby", room?.isRunning ?? false),
+    clearTimer
   };
 }
 

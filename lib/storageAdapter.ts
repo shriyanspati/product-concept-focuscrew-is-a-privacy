@@ -7,7 +7,7 @@ const roomConfigKey = "soryvo:room-config";
 export type RoomAdapter = {
   saveRoomConfig(config: RoomConfig): void;
   loadRoomConfig(roomCode?: string): RoomConfig | null;
-  clearRoomConfig(): void;
+  clearRoomConfig(roomCode?: string): void;
 };
 
 export const localRoomAdapter: RoomAdapter = {
@@ -32,7 +32,13 @@ export const localRoomAdapter: RoomAdapter = {
       return null;
     }
   },
-  clearRoomConfig() {
+  clearRoomConfig(roomCode) {
+    if (roomCode) {
+      const saved = this.loadRoomConfig(roomCode);
+      if (!saved) {
+        return;
+      }
+    }
     window.localStorage.removeItem(roomConfigKey);
   }
 };

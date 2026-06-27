@@ -23,11 +23,37 @@ h1 {
   font-size: 20px;
 }
 
-#category {
+#status {
   border: 1px solid #344047;
   border-radius: 8px;
   background: #20282D;
   padding: 12px;
+  font-weight: 700;
+}
+
+#status.active {
+  border-color: #9DBDB1;
+  color: #9DBDB1;
+}
+
+dl {
+  margin: 12px 0;
+}
+
+dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #344047;
+  padding: 8px 0;
+}
+
+dt {
+  color: #A8B3B8;
+}
+
+dd {
+  margin: 0;
   font-weight: 700;
 }
 
@@ -55,4 +81,20 @@ button:focus-visible {
   transform: translateY(-1px);
   outline: 2px solid #9DBDB1;
   outline-offset: 2px;
+}
+
+button + button {
+  margin-top: 8px;
+}
+
+button.secondary {
+  border: 1px solid #344047;
+  background: #20282D;
+  color: #E7ECEE;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  transform: none;
 }

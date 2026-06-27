@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
   fetchLiveRoomSnapshot,
   heartbeatRoomMember,
@@ -28,9 +29,14 @@ export function useLiveRoom({
   const currentParticipantIdRef = useRef<string | null>(config.liveParticipantId ?? null);
   const roomIdRef = useRef<string | null>(config.liveRoomId ?? null);
   const refreshRef = useRef<(() => Promise<void>) | null>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const heartbeatIntervalRef = useRef<number | null>(null);
+  const beforeUnloadHandlerRef = useRef<(() => void) | null>(null);
+  const intentionallyStoppedRef = useRef(false);
+  const connectionGenerationRef = useRef(0);
 
   const refresh = useCallback(async () => {
-    if (!roomIdRef.current || !currentParticipantIdRef.current) {
+    if (intentionallyStoppedRef.current || !roomIdRef.current || !currentParticipantIdRef.current) {
       return;
     }
 
@@ -44,6 +50,11 @@ export function useLiveRoom({
 
   useEffect(() => {
     if (!enabled) {
+      setConnectionState("idle");
+      return;
+    }
+
+    if (intentionallyStoppedRef.current) {
       setConnectionState("idle");
       return;
     }
@@ -62,7 +73,8 @@ export function useLiveRoom({
     const supabaseClient = supabase;
 
     let cancelled = false;
-    let cleanup: (() => void) | undefined;
+    const generation = connectionGenerationRef.current + 1;
+    connectionGenerationRef.current = generation;
 
     async function connect() {
       setConnectionState("connecting");
@@ -75,7 +87,7 @@ export function useLiveRoom({
           goal: config.goal || "Finish one focused study task"
         });
 
-        if (cancelled) {
+        if (cancelled || intentionallyStoppedRef.current || connectionGenerationRef.current !== generation) {
           return;
         }
 
@@ -95,6 +107,9 @@ export function useLiveRoom({
             void refreshRef.current?.();
           })
           .subscribe((status) => {
+            if (intentionallyStoppedRef.current) {
+              return;
+            }
             if (status === "SUBSCRIBED") {
               setConnectionState("live");
             }
@@ -103,10 +118,7 @@ export function useLiveRoom({
               setConnectionState("reconnecting");
             }
           });
-
-        cleanup = () => {
-          void supabaseClient.removeChannel(channel);
-        };
+        channelRef.current = channel;
       } catch (connectError) {
         if (!cancelled) {
           setConnectionState("error");
@@ -119,7 +131,11 @@ export function useLiveRoom({
 
     return () => {
       cancelled = true;
-      cleanup?.();
+      if (channelRef.current) {
+        const channel = channelRef.current;
+        channelRef.current = null;
+        void supabaseClient.removeChannel(channel);
+      }
       setConnectionState("idle");
     };
   }, [config.displayName, config.goal, enabled, roomCode]);
@@ -140,7 +156,7 @@ export function useLiveRoom({
     };
 
     heartbeat();
-    const interval = window.setInterval(heartbeat, 30_000);
+    heartbeatIntervalRef.current = window.setInterval(heartbeat, 30_000);
 
     const markLeaving = () => {
       if (roomIdRef.current) {
@@ -152,18 +168,50 @@ export function useLiveRoom({
     };
 
     window.addEventListener("beforeunload", markLeaving);
+    beforeUnloadHandlerRef.current = markLeaving;
 
     return () => {
-      window.clearInterval(interval);
+      if (heartbeatIntervalRef.current !== null) {
+        window.clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
       window.removeEventListener("beforeunload", markLeaving);
-      markLeaving();
+      beforeUnloadHandlerRef.current = null;
+      if (!intentionallyStoppedRef.current) {
+        markLeaving();
+      }
     };
   }, [enabled]);
+
+  const unsubscribeRoom = useCallback(async () => {
+    intentionallyStoppedRef.current = true;
+    connectionGenerationRef.current += 1;
+
+    if (heartbeatIntervalRef.current !== null) {
+      window.clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+
+    if (beforeUnloadHandlerRef.current) {
+      window.removeEventListener("beforeunload", beforeUnloadHandlerRef.current);
+      beforeUnloadHandlerRef.current = null;
+    }
+
+    const channel = channelRef.current;
+    channelRef.current = null;
+    const supabase = getSupabaseBrowserClient();
+    if (channel && supabase) {
+      await supabase.removeChannel(channel);
+    }
+
+    setConnectionState("idle");
+  }, []);
 
   return {
     snapshot,
     connectionState,
     error,
-    refresh
+    refresh,
+    unsubscribeRoom
   };
 }

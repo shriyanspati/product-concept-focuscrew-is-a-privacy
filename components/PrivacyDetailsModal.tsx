@@ -62,6 +62,12 @@ export function PrivacyDetailsModal({ open, onClose }: PrivacyDetailsModalProps)
             </p>
           </section>
           <section>
+            <h3 className="font-semibold text-primary">Optional browser extension</h3>
+            <p className="mt-2">
+              The extension starts only when you enable a private signal session. It shares a broad category and tab-switch count with your Focus Check. It never shares URLs, tab titles, search terms, page contents, or browser history, and its session data is cleared when you stop it.
+            </p>
+          </section>
+          <section>
             <h3 className="font-semibold text-primary">Accountability Pulse</h3>
             <p className="mt-2">
               An anonymous group lock-in invitation is available only when every current member opts in, at least three members are active, the room is focusing, and the ten-minute cooldown has passed. It never includes who requested it or any private check details.

@@ -15,15 +15,16 @@ import {
   WifiOff,
   X
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConsentScreen } from "@/components/ConsentScreen";
-import { BreakLounge } from "@/components/BreakLounge";
+import { BreakLounge, type BreakLoungeHandle } from "@/components/BreakLounge";
 import { EndSessionReport } from "@/components/EndSessionReport";
 import { FocusCheckModal } from "@/components/FocusCheckModal";
 import { PrivacyDetailsModal } from "@/components/PrivacyDetailsModal";
-import { ScreenCheckPanel } from "@/components/ScreenCheckPanel";
+import { ScreenCheckPanel, type ScreenCheckHandle } from "@/components/ScreenCheckPanel";
 import { SoryvoLogo } from "@/components/SoryvoLogo";
 import { useLiveRoom } from "@/hooks/useLiveRoom";
+import { useExtensionActivitySignal } from "@/hooks/useExtensionActivitySignal";
 import { useSyncedPomodoro } from "@/hooks/useSyncedPomodoro";
 import { initialFocusHistory, seededMembers } from "@/lib/demoData";
 import { getFallbackFocusCoach, requestFocusCoach } from "@/lib/focusCoach";
@@ -31,6 +32,7 @@ import {
   endBreak,
   endRoom,
   insertLiveRoomEvent,
+  leaveLiveRoom,
   liveRoomsAvailable,
   pausePomodoro,
   resumePomodoro,
@@ -120,15 +122,27 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
   const [lastPrivateFocusCheckState, setLastPrivateFocusCheckState] = useState<FocusCheckStoredState | null>(null);
   const [accountabilityPulseVisible, setAccountabilityPulseVisible] = useState(false);
   const [pulseCooldownActive, setPulseCooldownActive] = useState(false);
+  const extensionActivitySignal = useExtensionActivitySignal();
+  const [isEndingSession, setIsEndingSession] = useState(false);
+  const [endSessionError, setEndSessionError] = useState("");
+  const [remoteSessionEnded, setRemoteSessionEnded] = useState(false);
+  const endingSessionRef = useRef(false);
+  const screenCheckRef = useRef<ScreenCheckHandle | null>(null);
+  const breakLoungeRef = useRef<BreakLoungeHandle | null>(null);
+  const localCountdownIntervalRef = useRef<number | null>(null);
+  const focusClockIntervalRef = useRef<number | null>(null);
+  const focusCheckIntervalRef = useRef<number | null>(null);
+  const coachSuccessTimeoutRef = useRef<number | null>(null);
+  const pulseCooldownTimeoutRef = useRef<number | null>(null);
 
-  const liveEnabled = ready && config.consentAccepted && config.mode === "live" && !config.judgeDemo;
+  const liveEnabled = ready && config.consentAccepted && config.mode === "live" && !config.judgeDemo && !isEndingSession;
   const liveRoom = useLiveRoom({ roomCode, config, enabled: liveEnabled });
   const isLiveCreator = Boolean(
     liveRoom.snapshot?.room.createdByUserId &&
     liveRoom.snapshot.currentParticipant.userId === liveRoom.snapshot.room.createdByUserId
   );
   const handlePomodoroExpired = useCallback(async (phase: RoomPhase) => {
-    if (!liveRoom.snapshot || !isLiveCreator) {
+    if (endingSessionRef.current || !liveRoom.snapshot || !isLiveCreator) {
       return;
     }
 
@@ -147,7 +161,8 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
   const syncedPomodoro = useSyncedPomodoro({
     room: liveRoom.snapshot?.room,
     isCreator: isLiveCreator,
-    onPhaseExpired: handlePomodoroExpired
+    onPhaseExpired: handlePomodoroExpired,
+    disabled: isEndingSession
   });
 
   useEffect(() => {
@@ -240,6 +255,7 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
       duration: snapshot.room.sessionDurationMinutes,
       liveRoomId: snapshot.room.id,
       liveParticipantId: snapshot.currentParticipant.id,
+      isHost: snapshot.currentParticipant.userId === snapshot.room.createdByUserId,
       mode: "live"
     }));
     setGoalDraft(snapshot.currentParticipant.goal);
@@ -294,10 +310,19 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
 
     setPulseCooldownActive(true);
     const timeout = window.setTimeout(() => setPulseCooldownActive(false), remaining);
-    return () => window.clearTimeout(timeout);
+    pulseCooldownTimeoutRef.current = timeout;
+    return () => {
+      if (pulseCooldownTimeoutRef.current === timeout) {
+        window.clearTimeout(timeout);
+        pulseCooldownTimeoutRef.current = null;
+      }
+    };
   }, [liveRoom.snapshot?.events]);
 
   const updateCoach = useCallback(async (signal: ActivitySignal, score = groupFocusScore) => {
+    if (endingSessionRef.current) {
+      return;
+    }
     setCoachLoading(true);
     setCoachSuccess(false);
     const signals = [...recentSignals.slice(-4), signal];
@@ -315,14 +340,21 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
       energyLevel: "steady"
     });
 
+    if (endingSessionRef.current) {
+      return;
+    }
+
     setCoach(nextCoach);
     setCoachLoading(false);
     setCoachSuccess(true);
-    window.setTimeout(() => setCoachSuccess(false), 1400);
+    if (coachSuccessTimeoutRef.current !== null) {
+      window.clearTimeout(coachSuccessTimeoutRef.current);
+    }
+    coachSuccessTimeoutRef.current = window.setTimeout(() => setCoachSuccess(false), 1400);
   }, [config.duration, config.goal, config.subject, focusedMinutes, groupDriftCount, groupFocusScore, recentSignals]);
 
   useEffect(() => {
-    if (!ready || !config.consentAccepted || showReport) {
+    if (!ready || !config.consentAccepted || showReport || isEndingSession) {
       return;
     }
 
@@ -330,10 +362,13 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
       return;
     }
 
-    const interval = window.setInterval(() => {
+    localCountdownIntervalRef.current = window.setInterval(() => {
       setSecondsRemaining((seconds) => {
         if (seconds <= 1) {
-          window.clearInterval(interval);
+          if (localCountdownIntervalRef.current !== null) {
+            window.clearInterval(localCountdownIntervalRef.current);
+            localCountdownIntervalRef.current = null;
+          }
           setShowReport(true);
           return 0;
         }
@@ -342,14 +377,22 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
       });
     }, 1000);
 
-    return () => window.clearInterval(interval);
-  }, [config.consentAccepted, config.mode, ready, showReport]);
+    return () => {
+      if (localCountdownIntervalRef.current !== null) {
+        window.clearInterval(localCountdownIntervalRef.current);
+        localCountdownIntervalRef.current = null;
+      }
+    };
+  }, [config.consentAccepted, config.mode, isEndingSession, ready, showReport]);
 
   useEffect(() => {
-    if (liveRoom.snapshot?.room.phase === "ended") {
-      setShowReport(true);
+    if (liveRoom.snapshot?.room.phase === "ended" && !endingSessionRef.current) {
+      endingSessionRef.current = true;
+      setIsEndingSession(true);
+      setRemoteSessionEnded(true);
+      localRoomAdapter.clearRoomConfig(config.roomCode);
     }
-  }, [liveRoom.snapshot?.room.phase]);
+  }, [config.roomCode, liveRoom.snapshot?.room.phase]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("soryvo:focus-check-frequency") as FocusCheckFrequency | null;
@@ -359,12 +402,24 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
   }, []);
 
   useEffect(() => {
+    if (isEndingSession) {
+      return;
+    }
     setFocusCheckNow(Date.now());
-    const interval = window.setInterval(() => setFocusCheckNow(Date.now()), 1000);
-    return () => window.clearInterval(interval);
-  }, []);
+    focusClockIntervalRef.current = window.setInterval(() => setFocusCheckNow(Date.now()), 1000);
+    return () => {
+      if (focusClockIntervalRef.current !== null) {
+        window.clearInterval(focusClockIntervalRef.current);
+        focusClockIntervalRef.current = null;
+      }
+    };
+  }, [isEndingSession]);
 
   useEffect(() => {
+    if (isEndingSession) {
+      setNextFocusCheckAt(null);
+      return;
+    }
     window.localStorage.setItem("soryvo:focus-check-frequency", focusCheckFrequency);
 
     if (focusCheckFrequency === "manual") {
@@ -373,10 +428,10 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
     }
 
     setNextFocusCheckAt(Date.now() + Number(focusCheckFrequency) * 60 * 1000);
-  }, [focusCheckFrequency]);
+  }, [focusCheckFrequency, isEndingSession]);
 
   useEffect(() => {
-    if (!config.consentAccepted || focusCheckFrequency === "manual" || !nextFocusCheckAt || focusCheckOpen || showReport) {
+    if (isEndingSession || !config.consentAccepted || focusCheckFrequency === "manual" || !nextFocusCheckAt || focusCheckOpen || showReport) {
       return;
     }
 
@@ -384,15 +439,20 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
       return;
     }
 
-    const interval = window.setInterval(() => {
+    focusCheckIntervalRef.current = window.setInterval(() => {
       if (Date.now() >= nextFocusCheckAt && config.goal.trim()) {
         setFocusCheckOpen(true);
         setNextFocusCheckAt(Date.now() + Number(focusCheckFrequency) * 60 * 1000);
       }
     }, 1000);
 
-    return () => window.clearInterval(interval);
-  }, [config.consentAccepted, config.goal, focusCheckFrequency, focusCheckOpen, liveRoom.snapshot?.room.phase, nextFocusCheckAt, showReport]);
+    return () => {
+      if (focusCheckIntervalRef.current !== null) {
+        window.clearInterval(focusCheckIntervalRef.current);
+        focusCheckIntervalRef.current = null;
+      }
+    };
+  }, [config.consentAccepted, config.goal, focusCheckFrequency, focusCheckOpen, isEndingSession, liveRoom.snapshot?.room.phase, nextFocusCheckAt, showReport]);
 
   async function acceptConsent() {
     setJoiningLiveRoom(true);
@@ -605,7 +665,10 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
     setAccountabilityPulseVisible(true);
     setPulseCooldownActive(true);
     setRecoveryMoments((count) => count + 1);
-    window.setTimeout(() => setPulseCooldownActive(false), 10 * 60 * 1000);
+    if (pulseCooldownTimeoutRef.current !== null) {
+      window.clearTimeout(pulseCooldownTimeoutRef.current);
+    }
+    pulseCooldownTimeoutRef.current = window.setTimeout(() => setPulseCooldownActive(false), 10 * 60 * 1000);
     return "Anonymous lock-in invitation sent. No identity or screen details were shared.";
   }
 
@@ -715,7 +778,7 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
     setJoinError("Invite link copied.");
   }
 
-  async function runLiveTimerAction(action: "start" | "pause" | "resume" | "break" | "focus" | "end") {
+  async function runLiveTimerAction(action: "start" | "pause" | "resume" | "break" | "focus") {
     if (!liveRoom.snapshot) {
       setJoinError("Live room is still connecting.");
       return;
@@ -747,22 +810,118 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
         await endBreak(liveRoom.snapshot.room.id);
       }
 
-      if (action === "end") {
-        await endRoom(liveRoom.snapshot.room.id);
-        setShowReport(true);
-      }
     } catch (error) {
       setJoinError(error instanceof Error ? error.message : "Shared timer action failed.");
     }
   }
 
-  function endCurrentSession() {
-    if (config.mode === "live" && liveRoom.snapshot && isLiveCreator) {
-      void runLiveTimerAction("end");
+  async function stopScreenCheck() {
+    console.log("[Soryvo] Cleanup: stopping Screen Check");
+    await screenCheckRef.current?.stop();
+    console.log("[Soryvo] Cleanup complete: Screen Check");
+  }
+
+  async function disconnectBreakLounge() {
+    console.log("[Soryvo] Cleanup: disconnecting Break Lounge");
+    await breakLoungeRef.current?.disconnect();
+    console.log("[Soryvo] Cleanup complete: Break Lounge");
+  }
+
+  async function unsubscribeRoom() {
+    console.log("[Soryvo] Cleanup: unsubscribing room Realtime");
+    await liveRoom.unsubscribeRoom();
+    console.log("[Soryvo] Cleanup complete: room Realtime");
+  }
+
+  async function clearRoomTimers() {
+    console.log("[Soryvo] Cleanup: clearing room timers");
+    const intervalRefs = [localCountdownIntervalRef, focusClockIntervalRef, focusCheckIntervalRef];
+    intervalRefs.forEach((timerRef) => {
+      if (timerRef.current !== null) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    });
+
+    const timeoutRefs = [coachSuccessTimeoutRef, pulseCooldownTimeoutRef];
+    timeoutRefs.forEach((timerRef) => {
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    });
+
+    syncedPomodoro.clearTimer();
+    setNextFocusCheckAt(null);
+    setFocusCheckOpen(false);
+    console.log("[Soryvo] Cleanup complete: room timers");
+  }
+
+  async function endSession() {
+    if (endingSessionRef.current) {
       return;
     }
 
-    setShowReport(true);
+    endingSessionRef.current = true;
+    setIsEndingSession(true);
+    setEndSessionError("");
+
+    const roomId = liveRoom.snapshot?.room.id ?? config.liveRoomId ?? null;
+    const isHost = config.mode !== "live" || isLiveCreator || config.isHost === true;
+    const screenCheckActive = screenCheckRef.current?.isActive() ?? false;
+    const livekitConnected = breakLoungeRef.current?.isConnected() ?? false;
+
+    console.log("[Soryvo] Ending session", {
+      roomId,
+      isHost,
+      screenCheckActive,
+      livekitConnected,
+    });
+
+    const diagnostics: string[] = [];
+    const cleanupResults = await Promise.allSettled([
+      stopScreenCheck(),
+      disconnectBreakLounge(),
+      unsubscribeRoom(),
+      clearRoomTimers(),
+    ]);
+
+    cleanupResults.forEach((result, index) => {
+      if (result.status === "rejected") {
+        const labels = ["Screen Check", "Break Lounge", "Realtime", "room timers"];
+        const message = `${labels[index]} cleanup failed: ${getErrorMessage(result.reason)}`;
+        diagnostics.push(message);
+        console.warn(`[Soryvo] ${message}`);
+      }
+    });
+
+    try {
+      if (config.mode === "live" && roomId) {
+        if (isHost) {
+          console.log("[Soryvo] Marking room ended", { roomId });
+          await endRoom(roomId);
+        } else {
+          console.log("[Soryvo] Leaving room", { roomId });
+          await leaveLiveRoom(roomId);
+        }
+      }
+    } catch (error) {
+      const message = `Database cleanup failed: ${getErrorMessage(error)}`;
+      diagnostics.push(message);
+      setEndSessionError(message);
+      console.warn("[Soryvo] End session database step failed", error);
+    }
+
+    localRoomAdapter.clearRoomConfig(config.roomCode);
+    window.sessionStorage.setItem("soryvo:end-session-result", isHost ? "host" : "participant");
+    if (diagnostics.length > 0) {
+      window.sessionStorage.setItem("soryvo:end-session-diagnostic", diagnostics.join("\n"));
+    } else {
+      window.sessionStorage.removeItem("soryvo:end-session-diagnostic");
+    }
+
+    router.replace("/room?ended=1");
+    router.refresh();
   }
 
   async function submitInviteJoin(event: React.FormEvent<HTMLFormElement>) {
@@ -795,7 +954,8 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
       roomCode,
       mode: "live" as const,
       judgeDemo: false,
-      consentAccepted: false
+      consentAccepted: false,
+      isHost: false
     };
     setConfig(nextConfig);
     setGoalDraft(nextConfig.goal);
@@ -909,6 +1069,30 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
     return <ConsentScreen onAccept={acceptConsent} busy={joiningLiveRoom} />;
   }
 
+  if (remoteSessionEnded) {
+    return (
+      <main className="grid min-h-screen place-items-center px-5 py-10">
+        <section className="w-full max-w-xl border-t border-border pt-8">
+          <SoryvoLogo variant="mark" size={44} priority className="mb-5 object-contain" />
+          <p className="text-sm font-medium text-muted">Room {config.roomCode}</p>
+          <h1 className="mt-2 text-3xl font-semibold text-primary">This study session has ended</h1>
+          <p className="mt-3 leading-7 text-muted">The room host ended the session for everyone.</p>
+          <button
+            type="button"
+            onClick={() => {
+              window.sessionStorage.setItem("soryvo:end-session-result", "host");
+              router.replace("/room?ended=1");
+              router.refresh();
+            }}
+            className="mt-6 rounded-control bg-focus px-5 py-3 font-semibold text-white transition hover:bg-focusDark"
+          >
+            Return to rooms
+          </button>
+        </section>
+      </main>
+    );
+  }
+
   const focusLabel = getFocusLabel(groupFocusScore);
   const progress = config.mode === "live"
     ? syncedPomodoro.progress
@@ -960,17 +1144,19 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
           </button>
           <button
             type="button"
-            onClick={endCurrentSession}
-            className="rounded-control border border-border px-3 py-2 text-sm font-semibold text-primary transition hover:bg-break"
+            onClick={() => void endSession()}
+            disabled={isEndingSession}
+            className="rounded-control border border-border px-3 py-2 text-sm font-semibold text-primary transition hover:bg-break disabled:cursor-not-allowed disabled:opacity-60"
           >
-            End Session
+            {isEndingSession ? "Ending session…" : "End Session"}
           </button>
           <button
             type="button"
-            onClick={() => router.push("/room")}
-            className="rounded-control border border-border px-3 py-2 text-sm font-semibold text-primary transition hover:bg-surfaceHover"
+            onClick={() => void endSession()}
+            disabled={isEndingSession}
+            className="rounded-control border border-border px-3 py-2 text-sm font-semibold text-primary transition hover:bg-surfaceHover disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Leave Room
+            {isEndingSession ? "Leaving…" : "Leave Room"}
           </button>
         </div>
       </header>
@@ -989,6 +1175,11 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
         {joinError && (
           <p className="border-l-2 border-border pl-3 text-sm text-muted">
             {joinError}
+          </p>
+        )}
+        {process.env.NODE_ENV !== "production" && endSessionError && (
+          <p className="border-l-2 border-alert pl-3 font-mono text-xs text-alert">
+            End session diagnostic: {endSessionError}
           </p>
         )}
       </div>
@@ -1117,6 +1308,7 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
           </AnimatePresence>
 
           <BreakLounge
+            ref={breakLoungeRef}
             open={config.judgeDemo ? selectedSignal === "need_break" : liveRoom.snapshot?.room.phase === "break"}
             roomId={liveRoom.snapshot?.room.id}
             displayName={config.displayName}
@@ -1200,9 +1392,12 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
             </div>
 
             <ScreenCheckPanel
+              ref={screenCheckRef}
               goal={config.goal}
               subject={config.subject}
-              activityCategory={demoActivityCategory}
+              activityCategory={config.judgeDemo
+                ? demoActivityCategory
+                : extensionActivitySignal.enabled ? extensionActivitySignal.category : "unknown"}
               privateFocusCheckState={lastPrivateFocusCheckState}
               focusCheckOpen={focusCheckOpen}
               isFocusPhase={roomIsFocusPhase}
@@ -1317,7 +1512,8 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
         open={focusCheckOpen}
         goal={config.goal}
         subject={config.subject}
-        demoCategory={demoActivityCategory}
+        demoCategory={config.judgeDemo ? demoActivityCategory : undefined}
+        extensionSignal={extensionActivitySignal}
         onClose={() => setFocusCheckOpen(false)}
         onComplete={completeFocusCheck}
       />
@@ -1603,4 +1799,8 @@ function formatFocusCheckSchedule(nextFocusCheckAt: number | null, frequency: Fo
 
   const remaining = Math.max(0, Math.ceil((nextFocusCheckAt - now) / 1000));
   return `Next check in ${formatSeconds(remaining)}`;
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }

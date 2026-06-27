@@ -8,13 +8,18 @@
   </head>
   <body>
     <main>
-      <p class="eyebrow">Soryvo Prototype</p>
-      <h1>Activity category</h1>
-      <p id="category">Checking current tab...</p>
+      <p class="eyebrow">Soryvo Focus Check</p>
+      <h1>Private activity signals</h1>
+      <p id="status">Sharing off</p>
+      <dl>
+        <div><dt>Broad category</dt><dd id="category">Unknown</dd></div>
+        <div><dt>Tab switches</dt><dd id="switch-count">0</dd></div>
+      </dl>
       <p class="note">
-        This prototype only labels broad categories. It does not save screenshots, page contents, passwords, or browsing history.
+        Opt-in and session-only. Soryvo never receives URLs, titles, searches, page contents, screenshots, or browser history.
       </p>
-      <button id="refresh" type="button">Refresh category</button>
+      <button id="start" type="button">Start private signals</button>
+      <button id="stop" type="button" class="secondary">Stop &amp; clear</button>
     </main>
     <script src="popup.js"></script>
   </body>

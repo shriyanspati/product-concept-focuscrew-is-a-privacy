@@ -1,14 +1,21 @@
 {
   "manifest_version": 3,
   "name": "Soryvo Activity Category Prototype",
-  "version": "0.1.0",
-  "description": "Privacy-first prototype for categorizing the current site into broad study-flow categories.",
-  "permissions": ["activeTab", "scripting"],
+  "version": "0.2.0",
+  "description": "Opt-in, session-only broad activity categories and tab-switch counts for Soryvo Focus Check.",
+  "permissions": ["activeTab", "storage", "tabs"],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Soryvo category"
   },
   "background": {
     "service_worker": "background.js"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://localhost/*", "http://127.0.0.1/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ]
 }

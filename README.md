@@ -59,6 +59,23 @@ Focus Check never stores typed answers in Supabase. Only these broad fields may 
 
 The group never sees typed answers, activity confidence, private AI messages, check frequency, or personal focus details.
 
+## Optional Browser Extension
+
+The prototype extension can privately improve Focus Check with an explicit, session-only signal. It reports only a broad activity category and tab-switch count.
+
+- It has no browser-history permission.
+- It never sends URLs, tab titles, search terms, screenshots, or page contents.
+- The user starts and stops sharing from the popup.
+- Sanitized signal state lives only in `chrome.storage.session` and is cleared on stop.
+- Focus Check answers and extension signals are never shown to the room or stored in Supabase.
+
+To try it locally in Chrome or Edge:
+
+1. Open the browser's extensions page and enable Developer mode.
+2. Choose `Load unpacked` and select this project&apos;s `extension/` folder.
+3. Open Soryvo on `http://127.0.0.1:3000`, open the extension popup, and click `Start private signals`.
+4. Stop the session from the popup to immediately clear its category and switch count.
+
 ## Optional Screen Check
 
 Screen Check is off by default and only begins after a user selects expected study contexts, clicks `Enable Screen Check`, and approves the browser’s screen-sharing picker.

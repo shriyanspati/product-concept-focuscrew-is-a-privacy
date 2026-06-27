@@ -15,12 +15,14 @@ import type {
   FocusCheckStoredState,
   ParticipantStatus
 } from "@/lib/types";
+import type { ExtensionActivitySignal } from "@/hooks/useExtensionActivitySignal";
 
 type FocusCheckModalProps = {
   open: boolean;
   goal: string;
   subject: string;
   demoCategory?: ActivityCategory;
+  extensionSignal?: ExtensionActivitySignal;
   onClose: () => void;
   onComplete: (result: {
     publicStatus: ParticipantStatus;
@@ -36,6 +38,7 @@ export function FocusCheckModal({
   goal,
   subject,
   demoCategory,
+  extensionSignal,
   onClose,
   onComplete
 }: FocusCheckModalProps) {
@@ -99,7 +102,8 @@ export function FocusCheckModal({
       currentActivity,
       nextTinyStep,
       blocker,
-      activityCategory: demoCategory ?? getDefaultActivityCategory()
+      activityCategory: demoCategory ?? (extensionSignal?.enabled ? extensionSignal.category : getDefaultActivityCategory()),
+      tabSwitchCount: extensionSignal?.enabled ? extensionSignal.tabSwitchCount : undefined
     });
 
     setResult(focusCheckResult);
@@ -146,6 +150,22 @@ export function FocusCheckModal({
           <p className="text-xs font-medium text-muted">Your goal</p>
           <p className="mt-2 text-primary">{goal || "Add one clear study goal before starting a Focus Check."}</p>
         </div>
+
+        {extensionSignal?.connected && (
+          <div className="mt-4 border-l-2 border-border pl-3 text-sm text-muted">
+            {extensionSignal.enabled ? (
+              <>
+                <p className="font-semibold text-primary">Optional extension signal active</p>
+                <p className="mt-1">
+                  {formatActivityCategory(extensionSignal.category)} · {extensionSignal.tabSwitchCount} tab switches this session
+                </p>
+              </>
+            ) : (
+              <p>Optional extension connected. Private activity signals are off.</p>
+            )}
+            <p className="mt-1 text-xs">No URLs, titles, searches, or browsing history are shared.</p>
+          </div>
+        )}
 
         {error && (
           <p className="mt-4 border-l-2 border-focus pl-3 text-sm text-primary">
@@ -253,6 +273,19 @@ export function FocusCheckModal({
       </section>
     </div>
   );
+}
+
+function formatActivityCategory(category: ActivityCategory) {
+  const labels: Record<ActivityCategory, string> = {
+    study_tool: "Study tool",
+    writing_tool: "Writing tool",
+    research_tool: "Research page",
+    neutral_tool: "General tool",
+    social_media: "Social media",
+    idle: "Idle",
+    unknown: "Unknown activity"
+  };
+  return labels[category];
 }
 
 function FocusChoice({ label, onClick }: { label: string; onClick: () => void }) {

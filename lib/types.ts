@@ -13,6 +13,7 @@ export type Room = {
   id: string;
   roomCode: string;
   createdAt: string;
+  endedAt: string | null;
   createdByUserId: string;
   title: string;
   subject: string | null;
@@ -141,6 +142,7 @@ export type RoomConfig = {
   mode?: "demo" | "live" | "local";
   liveRoomId?: string;
   liveParticipantId?: string;
+  isHost?: boolean;
 };
 
 export type SessionReport = {
@@ -190,4 +192,5 @@ export type FocusCheckInput = {
   nextTinyStep?: string;
   blocker?: string;
   activityCategory?: ActivityCategory;
+  tabSwitchCount?: number;
 };

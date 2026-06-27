@@ -24,6 +24,7 @@ type RoomRow = {
   id: string;
   room_code: string;
   created_at: string;
+  ended_at?: string | null;
   created_by: string;
   title: string;
   subject: string | null;
@@ -223,6 +224,10 @@ export async function endRoom(roomId: string) {
   return callRoomRpc("end_room", roomId);
 }
 
+export async function leaveLiveRoom(roomId: string) {
+  return callRoomRpc("leave_room", roomId);
+}
+
 export async function insertLiveRoomEvent(input: {
   roomId: string;
   eventType: RoomEventType;
@@ -292,6 +297,7 @@ function mapRoom(row: RoomRow): Room {
     id: row.id,
     roomCode: row.room_code,
     createdAt: row.created_at,
+    endedAt: row.ended_at ?? null,
     createdByUserId: row.created_by,
     title: row.title,
     subject: row.subject,

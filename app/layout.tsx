@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans, Source_Serif_4 } from "next/font/google";
+import { ExtensionWarning } from "@/components/extension-warning";
 import "./globals.css";
 
 const plexSans = IBM_Plex_Sans({
@@ -42,8 +43,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={`${plexSans.variable} ${sourceSerif.variable} ${plexMono.variable} antialiased`}>
+        <ExtensionWarning />
         {children}
       </body>
     </html>

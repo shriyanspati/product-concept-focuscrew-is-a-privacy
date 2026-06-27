@@ -186,6 +186,7 @@ function RoomSetupInner() {
           roomCode: snapshot.room.roomCode,
           liveRoomId: snapshot.room.id,
           liveParticipantId: snapshot.currentParticipant.id,
+          isHost: pendingAction === "create",
           consentAccepted: true
         };
         localRoomAdapter.saveRoomConfig(acceptedConfig);

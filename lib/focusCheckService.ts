@@ -17,7 +17,8 @@ export const focusCheckSchema = z.object({
   blocker: z.string().trim().max(180).optional(),
   activityCategory: z
     .enum(["study_tool", "writing_tool", "research_tool", "neutral_tool", "social_media", "idle", "unknown"])
-    .optional()
+    .optional(),
+  tabSwitchCount: z.number().int().min(0).max(999).optional()
 });
 
 export function getFallbackFocusCheck(input: FocusCheckInput): FocusCheckResult {
@@ -60,6 +61,16 @@ export function getFallbackFocusCheck(input: FocusCheckInput): FocusCheckResult 
       confidence: 0.78,
       message: "The current activity signal may not support your goal. Try a quick reset before continuing.",
       suggestedAction: "Close the loop with one five-minute task-alignment reset."
+    };
+  }
+
+  if ((input.tabSwitchCount ?? 0) >= 8 && (category === "neutral_tool" || category === "unknown")) {
+    return {
+      alignment: "uncertain",
+      privateStatus: "focused",
+      confidence: 0.64,
+      message: "You have switched tabs several times. Check whether the current tool still supports your goal.",
+      suggestedAction: "Choose one tab for the next five minutes and finish one visible step."
     };
   }
 
@@ -164,8 +175,9 @@ export function makeFocusCheckPrompt(input: FocusCheckInput) {
       nextTinyStep: input.nextTinyStep ?? "",
       blocker: input.blocker ?? "",
       activityCategory: input.activityCategory ?? "unknown",
+      tabSwitchCount: input.tabSwitchCount ?? 0,
       privacyBoundary:
-        "Only self-reported task-alignment text and optional broad activity category are available. No screenshots, URLs, page titles, messages, browser history, keystrokes, camera, microphone, or room member data."
+        "Only self-reported task-alignment text, an optional broad activity category, and a session tab-switch count are available. No screenshots, URLs, page titles, search terms, messages, browser history, keystrokes, camera, microphone, or room member data."
     })
   };
 }

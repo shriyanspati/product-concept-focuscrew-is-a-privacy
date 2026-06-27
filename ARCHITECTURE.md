@@ -103,6 +103,12 @@ After completion, only broad public state is mapped to the participant row:
 - intentional break -> `taking_break`
 - skipped -> `not_sharing_activity`
 
+## Optional Extension Signal Flow
+
+The extension requests `tabs` only to count active-tab changes and classify the active hostname locally. It does not request the browser `history` permission and never retains a URL, title, search query, or page content.
+
+Users explicitly start a signal session in the popup. The service worker stores only `enabled`, `category`, and `tabSwitchCount` in `chrome.storage.session`. A content-script bridge on local Soryvo pages forwards only that sanitized object to `useExtensionActivitySignal`. Focus Check may send the category and count to its private analysis endpoint; neither value is written to Supabase or exposed to room members.
+
 ## AI Fallback Behavior
 
 Fallback logic uses simple text relevance, self-reported state, and optional broad activity category. It never accuses users, never mentions attention disorders, and never makes medical claims.

@@ -10,7 +10,7 @@ import {
   RoomEvent
 } from "livekit-client";
 import { Coffee, ShieldCheck } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { BreakCallControls } from "@/components/BreakCallControls";
 import { BreakParticipantGrid } from "@/components/BreakParticipantGrid";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
@@ -22,12 +22,17 @@ type BreakLoungeProps = {
   demoMode?: boolean;
 };
 
+export type BreakLoungeHandle = {
+  disconnect(): Promise<void>;
+  isConnected(): boolean;
+};
+
 type MediaDevice = {
   deviceId: string;
   label: string;
 };
 
-export function BreakLounge({ open, roomId, displayName, demoMode = false }: BreakLoungeProps) {
+export const BreakLounge = forwardRef<BreakLoungeHandle, BreakLoungeProps>(function BreakLounge({ open, roomId, displayName, demoMode = false }, ref) {
   const [liveRoom, setLiveRoom] = useState<LiveKitRoom | null>(null);
   const [remoteNames, setRemoteNames] = useState<string[]>([]);
   const [joining, setJoining] = useState(false);
@@ -41,16 +46,65 @@ export function BreakLounge({ open, roomId, displayName, demoMode = false }: Bre
   const [cameras, setCameras] = useState<MediaDevice[]>([]);
   const [selectedMic, setSelectedMic] = useState("");
   const [selectedCamera, setSelectedCamera] = useState("");
+  const liveRoomRef = useRef<LiveKitRoom | null>(null);
+  const audioTrackRef = useRef<LocalAudioTrack | null>(null);
+  const videoTrackRef = useRef<LocalVideoTrack | null>(null);
+  const joinedRef = useRef(false);
 
   const livekitConfigured = Boolean(process.env.NEXT_PUBLIC_LIVEKIT_URL);
   const simulatedNames = useMemo(() => ["Maya", "Jordan", "Alex"], []);
+
+  const disconnectResources = useCallback(async (updateUi = true) => {
+    const room = liveRoomRef.current;
+    const currentAudioTrack = audioTrackRef.current;
+    const currentVideoTrack = videoTrackRef.current;
+
+    await Promise.allSettled([
+      currentAudioTrack?.mute() ?? Promise.resolve(),
+      room && currentAudioTrack ? room.localParticipant.unpublishTrack(currentAudioTrack) : Promise.resolve(),
+      room && currentVideoTrack ? room.localParticipant.unpublishTrack(currentVideoTrack) : Promise.resolve()
+    ]);
+
+    currentAudioTrack?.stop();
+    currentVideoTrack?.stop();
+    await Promise.resolve(room?.disconnect());
+
+    liveRoomRef.current = null;
+    audioTrackRef.current = null;
+    videoTrackRef.current = null;
+    joinedRef.current = false;
+
+    if (updateUi) {
+      setLiveRoom(null);
+      setAudioTrack(null);
+      setVideoTrack(null);
+      setMicEnabled(false);
+      setCameraEnabled(false);
+      setJoined(false);
+      setRemoteNames([]);
+    }
+  }, []);
+
+  const leaveCall = useCallback(async () => {
+    await disconnectResources(true);
+  }, [disconnectResources]);
+
+  useImperativeHandle(ref, () => ({
+    disconnect: leaveCall,
+    isConnected() {
+      return joinedRef.current || liveRoomRef.current !== null;
+    }
+  }), [leaveCall]);
 
   useEffect(() => {
     if (!open) {
       void leaveCall();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [leaveCall, open]);
+
+  useEffect(() => () => {
+    void disconnectResources(false);
+  }, [disconnectResources]);
 
   useEffect(() => {
     if (!liveRoom) {
@@ -100,6 +154,7 @@ export function BreakLounge({ open, roomId, displayName, demoMode = false }: Bre
   async function joinCall() {
     if (demoMode) {
       setJoined(true);
+      joinedRef.current = true;
       setRemoteNames(simulatedNames);
       setMessage("Demo mode: no real call is connected.");
       return;
@@ -152,8 +207,10 @@ export function BreakLounge({ open, roomId, displayName, demoMode = false }: Bre
       });
 
       await nextRoom.connect(data.serverUrl, data.token, { autoSubscribe: true });
+      liveRoomRef.current = nextRoom;
       setLiveRoom(nextRoom);
       setJoined(true);
+      joinedRef.current = true;
       await refreshDevices();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not join the Break Lounge.");
@@ -180,6 +237,7 @@ export function BreakLounge({ open, roomId, displayName, demoMode = false }: Bre
 
     const track = await createLocalAudioTrack(selectedMic ? { deviceId: selectedMic } : undefined);
     await liveRoom.localParticipant.publishTrack(track);
+    audioTrackRef.current = track;
     setAudioTrack(track);
     setMicEnabled(true);
     await refreshDevices();
@@ -194,11 +252,13 @@ export function BreakLounge({ open, roomId, displayName, demoMode = false }: Bre
       if (cameraEnabled) {
         await liveRoom.localParticipant.unpublishTrack(videoTrack);
         videoTrack.stop();
+        videoTrackRef.current = null;
         setVideoTrack(null);
         setCameraEnabled(false);
       } else {
         const track = await createLocalVideoTrack(selectedCamera ? { deviceId: selectedCamera } : undefined);
         await liveRoom.localParticipant.publishTrack(track);
+        videoTrackRef.current = track;
         setVideoTrack(track);
         setCameraEnabled(true);
       }
@@ -207,28 +267,10 @@ export function BreakLounge({ open, roomId, displayName, demoMode = false }: Bre
 
     const track = await createLocalVideoTrack(selectedCamera ? { deviceId: selectedCamera } : undefined);
     await liveRoom.localParticipant.publishTrack(track);
+    videoTrackRef.current = track;
     setVideoTrack(track);
     setCameraEnabled(true);
     await refreshDevices();
-  }
-
-  async function leaveCall() {
-    if (audioTrack) {
-      audioTrack.stop();
-    }
-
-    if (videoTrack) {
-      videoTrack.stop();
-    }
-
-    liveRoom?.disconnect();
-    setLiveRoom(null);
-    setAudioTrack(null);
-    setVideoTrack(null);
-    setMicEnabled(false);
-    setCameraEnabled(false);
-    setJoined(false);
-    setRemoteNames([]);
   }
 
   if (!open) {
@@ -331,4 +373,4 @@ export function BreakLounge({ open, roomId, displayName, demoMode = false }: Bre
       </motion.section>
     </AnimatePresence>
   );
-}
+});

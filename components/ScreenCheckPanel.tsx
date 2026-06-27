@@ -1,7 +1,7 @@
 "use client";
 
 import { MonitorCheck, MonitorUp, ShieldCheck, Square } from "lucide-react";
-import { useState } from "react";
+import { forwardRef, useImperativeHandle, useState } from "react";
 import { useScreenCheckSession } from "@/hooks/useScreenCheckSession";
 import type {
   ActivityCategory,
@@ -28,6 +28,11 @@ type ScreenCheckPanelProps = {
   onAccountabilityPulse: (source: "private_resets" | "explicit") => Promise<string>;
 };
 
+export type ScreenCheckHandle = {
+  stop(): Promise<void>;
+  isActive(): boolean;
+};
+
 const contextOptions: Array<{ value: ScreenCheckExpectedContext; label: string }> = [
   { value: "writing_notes", label: "Writing or notes" },
   { value: "research_pages", label: "Research pages" },
@@ -36,7 +41,7 @@ const contextOptions: Array<{ value: ScreenCheckExpectedContext; label: string }
   { value: "class_group_chat", label: "Class group chat" }
 ];
 
-export function ScreenCheckPanel(props: ScreenCheckPanelProps) {
+export const ScreenCheckPanel = forwardRef<ScreenCheckHandle, ScreenCheckPanelProps>(function ScreenCheckPanel(props, ref) {
   const [expectedContexts, setExpectedContexts] = useState<ScreenCheckExpectedContext[]>([]);
   const [dismissed, setDismissed] = useState(false);
   const [pulseMessage, setPulseMessage] = useState("");
@@ -51,6 +56,15 @@ export function ScreenCheckPanel(props: ScreenCheckPanelProps) {
     pauseRequested: props.pauseRequested,
     pauseReason: props.pauseReason
   });
+
+  useImperativeHandle(ref, () => ({
+    async stop() {
+      session.stop();
+    },
+    isActive() {
+      return session.status === "active";
+    }
+  }), [session]);
 
   const inactive = session.status === "idle" || session.status === "paused" || session.status === "error";
   const pulseGateOpen =
@@ -317,7 +331,7 @@ export function ScreenCheckPanel(props: ScreenCheckPanelProps) {
       )}
     </div>
   );
-}
+});
 
 function formatTimestamp(value: number | null, fallback: string) {
   return value ? new Date(value).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }) : fallback;

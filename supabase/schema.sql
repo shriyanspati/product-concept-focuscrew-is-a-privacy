@@ -20,6 +20,7 @@ create table if not exists public.rooms (
   room_code text unique not null check (room_code ~ '^[A-Z0-9]{6}$'),
   created_by uuid not null references auth.users(id) on delete cascade,
   created_at timestamptz not null default now(),
+  ended_at timestamptz,
   title text not null default 'Study room' check (char_length(title) between 1 and 80),
   subject text,
   focus_minutes integer not null default 25 check (focus_minutes in (15, 25, 45, 60)),
@@ -30,6 +31,9 @@ create table if not exists public.rooms (
   cycle_number integer not null default 1 check (cycle_number > 0),
   is_running boolean not null default false
 );
+
+alter table public.rooms
+  add column if not exists ended_at timestamptz;
 
 create table if not exists public.room_members (
   id uuid primary key default gen_random_uuid(),
@@ -529,19 +533,55 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  room_creator uuid;
+  room_phase_value public.room_phase;
 begin
-  if not public.is_room_creator(room_id_input) then
+  select created_by, phase
+  into room_creator, room_phase_value
+  from public.rooms
+  where id = room_id_input;
+
+  if not found then
+    return;
+  end if;
+
+  if room_creator <> auth.uid() then
     raise exception 'Only the room creator can end the room.';
+  end if;
+
+  if room_phase_value = 'ended' then
+    return;
   end if;
 
   update public.rooms
   set phase = 'ended',
       phase_ends_at = now(),
+      ended_at = coalesce(ended_at, now()),
       is_running = false
   where id = room_id_input;
 
   insert into public.room_events (room_id, created_by, event_type)
-  values (room_id_input, auth.uid(), 'room_ended');
+  select room_id_input, auth.uid(), 'room_ended'
+  where not exists (
+    select 1
+    from public.room_events
+    where room_id = room_id_input
+      and event_type = 'room_ended'
+  );
+end;
+$$;
+
+create or replace function public.leave_room(room_id_input uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from public.room_members
+  where room_id = room_id_input
+    and user_id = auth.uid();
 end;
 $$;
 
@@ -568,4 +608,5 @@ grant execute on function public.resume_pomodoro(uuid) to authenticated;
 grant execute on function public.start_break(uuid) to authenticated;
 grant execute on function public.end_break(uuid) to authenticated;
 grant execute on function public.end_room(uuid) to authenticated;
+grant execute on function public.leave_room(uuid) to authenticated;
 grant execute on function public.heartbeat_room_member(uuid, public.participant_status) to authenticated;

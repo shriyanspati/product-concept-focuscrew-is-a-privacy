@@ -11,17 +11,17 @@ export function ExtensionPreview() {
         </Link>
 
         <section className="border-t border-border pt-6 sm:pt-8">
-          <p className="mb-4 text-sm text-muted">Future optional extension</p>
+          <p className="mb-4 text-sm text-muted">Optional extension prototype</p>
           <h1 className="max-w-3xl text-4xl font-semibold sm:text-5xl">Extension Preview</h1>
           <p className="mt-5 max-w-3xl text-lg leading-8 text-muted">
-            Soryvo&apos;s optional extension would only send high-level activity categories, such as study tool, writing tool, social media, or idle time. It would not save screenshots or send private page contents.
+            Soryvo&apos;s opt-in extension sends only a high-level activity category and a session tab-switch count to your private Focus Check. It does not send URLs, titles, searches, screenshots, or page contents.
           </p>
 
           <div className="mt-8 grid gap-7 md:grid-cols-3">
             {[
-              [ShieldCheck, "Opt-in only", "Students choose whether to share broad activity categories."],
-              [Lock, "No private content", "No screenshots, page text, messages, passwords, or browsing history are stored."],
-              [Chrome, "Broad categories", "The prototype demonstrates labels like study tool, writing tool, social media, or idle."]
+              [ShieldCheck, "Opt-in only", "Students explicitly start and stop each private signal session."],
+              [Lock, "No private content", "No URLs, titles, searches, screenshots, messages, passwords, or browsing history are shared."],
+              [Chrome, "Broad signals", "Focus Check receives only a category and the number of tab switches in this session."]
             ].map(([Icon, title, copy]) => (
               <div key={title as string} className="border-t border-border pt-5">
                 <Icon aria-hidden="true" className="mb-4 text-muted" />
@@ -34,7 +34,7 @@ export function ExtensionPreview() {
           <div className="mt-8 border-t border-border pt-5">
             <p className="text-sm text-muted">Prototype boundary</p>
             <p className="mt-3 text-muted">
-              The app works fully without the extension. The extension folder is included only to show how a privacy-first future integration could categorize the current site without stealth behavior or hidden monitoring.
+              The app works fully without the extension. Signal data stays in Chrome&apos;s session memory, is cleared when sharing stops, and is never written to Soryvo&apos;s database.
             </p>
           </div>
         </section>
