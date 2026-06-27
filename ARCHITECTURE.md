@@ -21,7 +21,7 @@
 - `hooks/useRoomRealtime.ts`: compatibility re-export for older imports.
 - `lib/liveRoomApi.ts`: live room RPC/table adapter.
 - `lib/supabase/client.ts`: browser Supabase client.
-- `lib/supabase/ensureAnonymousSession.ts`: anonymous auth helper.
+- `lib/supabase/ensureAnonymousSession.ts`: email session helpers (`ensureEmailSession`, `isEmailSession`).
 - `lib/supabaseClient.ts`: compatibility re-export.
 - `lib/focusCheckService.ts`: Focus Check schema, fallback logic, mappings, and AI prompt.
 - `lib/screenCheckService.ts`: strict cloud vision input/output schema and conservative prompt.
@@ -36,9 +36,9 @@
 
 `room_events` stores shared room events such as focus started, break started, break ended, reset started, anonymous accountability pulse, paused, and ended. Pulse payloads are empty and must never include private Focus Check responses, screen details, or an identity.
 
-## Supabase Anonymous Auth
+## Supabase Email Auth
 
-Live rooms require Supabase anonymous authentication. The client calls `supabase.auth.signInAnonymously()` before invoking room RPCs. The browser only receives the anon key, never a service-role key.
+Live rooms require Supabase passwordless email authentication. The client establishes an email session (`ensureEmailSession`) before invoking room RPCs; `app/auth/callback/route.ts` exchanges the magic-link code for that session. Creating or joining a live room fails until the user has a valid email session. The browser only receives the publishable (anon) key, never a service-role key.
 
 ## RLS Boundaries
 
