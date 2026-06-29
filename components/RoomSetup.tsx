@@ -9,7 +9,7 @@ import { SoryvoLogo } from "@/components/SoryvoLogo";
 import { demoSubjects } from "@/lib/demoData";
 import { createLiveRoom, joinLiveRoom, liveRoomsAvailable } from "@/lib/liveRoomApi";
 import { localRoomAdapter } from "@/lib/storageAdapter";
-import { getSupabaseBrowserClient, isEmailSession } from "@/lib/supabaseClient";
+import { getSupabaseBrowserClient, isLiveRoomSession } from "@/lib/supabaseClient";
 import type { RoomConfig } from "@/lib/types";
 
 export function RoomSetup() {
@@ -37,12 +37,13 @@ function RoomSetupInner() {
   const [submitting, setSubmitting] = useState(false);
   const reduceMotion = useReducedMotion();
   const liveAvailable = liveRoomsAvailable();
+  const useLiveRooms = liveAvailable;
   const rhythm = getSessionRhythm(duration);
   const ticketGoal = goal.trim() || "Your first clear task will show here";
   const ticketSubject = subject || "Study session";
 
   useEffect(() => {
-    if (!liveAvailable) {
+    if (!useLiveRooms) {
       return;
     }
 
@@ -62,7 +63,7 @@ function RoomSetupInner() {
         return;
       }
 
-      const emailSession = isEmailSession(data.session);
+      const emailSession = isLiveRoomSession(data.session);
 
       const metadataName = data.session?.user.user_metadata?.display_name;
       if (emailSession && !displayName.trim() && typeof metadataName === "string") {
@@ -75,16 +76,16 @@ function RoomSetupInner() {
     return () => {
       cancelled = true;
     };
-  }, [displayName, liveAvailable]);
+  }, [displayName, useLiveRooms]);
 
   async function startRoom(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!judgeDemo && liveAvailable && !(await confirmEmailSession("/room"))) {
+    if (!judgeDemo && useLiveRooms && !(await confirmEmailSession("/room"))) {
       return;
     }
 
-    const roomCode = judgeDemo ? "CREW42" : liveAvailable ? "LIVE" : makeRoomCode();
+    const roomCode = judgeDemo ? "CREW42" : useLiveRooms ? "LIVE" : makeRoomCode();
 
     setLiveError("");
     setPendingAction("create");
@@ -95,7 +96,7 @@ function RoomSetupInner() {
       goal: goal.trim() || "Finish one focused study task",
       roomCode,
       judgeDemo,
-      mode: judgeDemo ? "demo" : liveAvailable ? "live" : "local",
+      mode: judgeDemo ? "demo" : useLiveRooms ? "live" : "local",
       consentAccepted: false
     });
   }
@@ -109,7 +110,7 @@ function RoomSetupInner() {
       return;
     }
 
-    if (!judgeDemo && normalizedCode !== "CREW42" && liveAvailable && !(await confirmEmailSession(`/room/${normalizedCode}`))) {
+    if (!judgeDemo && normalizedCode !== "CREW42" && useLiveRooms && !(await confirmEmailSession(`/room/${normalizedCode}`))) {
       return;
     }
 
@@ -122,7 +123,7 @@ function RoomSetupInner() {
       goal: goal.trim() || "Finish one focused study task",
       roomCode: normalizedCode,
       judgeDemo: judgeDemo || normalizedCode === "CREW42",
-      mode: judgeDemo || normalizedCode === "CREW42" ? "demo" : liveAvailable ? "live" : "local",
+      mode: judgeDemo || normalizedCode === "CREW42" ? "demo" : useLiveRooms ? "live" : "local",
       consentAccepted: false
     });
   }
@@ -140,7 +141,7 @@ function RoomSetupInner() {
 
     const { data } = await supabase.auth.getSession();
 
-    if (isEmailSession(data.session)) {
+    if (isLiveRoomSession(data.session)) {
       return true;
     }
 
@@ -152,7 +153,7 @@ function RoomSetupInner() {
     }
 
     params.set("next", nextPath);
-    setLiveError("Sign in with email before creating or joining a live room.");
+    setLiveError("Enter your name and email before creating or joining a live room.");
     router.push(`/signin?${params.toString()}`);
     return false;
   }
@@ -356,7 +357,11 @@ function RoomSetupInner() {
           </aside>
         </div>
 
-        {!liveAvailable && (
+        {liveAvailable ? (
+          <p className="mt-10 border-t border-border pt-5 text-sm text-muted">
+            Guest access uses a private temporary session. No password or email verification is required.
+          </p>
+        ) : !liveAvailable && (
           <p className="mt-10 border-t border-border pt-5 text-sm text-muted">
             Live rooms are unavailable in this local preview. You can still try the sample room.
           </p>
@@ -395,8 +400,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function getSessionRhythm(minutes: number) {
-  const breakMinutes = minutes === 15 ? 3 : minutes === 25 ? 5 : 10;
-  return `${minutes}-minute focus - ${breakMinutes}-minute break`;
+  return `${minutes}-minute focus - 5-minute break`;
 }
 
 function makeRoomCode() {

@@ -3,6 +3,21 @@ import { IBM_Plex_Mono, IBM_Plex_Sans, Source_Serif_4 } from "next/font/google";
 import { ExtensionWarning } from "@/components/extension-warning";
 import "./globals.css";
 
+const extensionAttributeCleanup = `
+(() => {
+  const attributes = ["data-new-gr-c-s-check-loaded", "data-gr-ext-installed"];
+  const detected = attributes.some((attribute) => document.body.hasAttribute(attribute));
+
+  if (detected) {
+    try {
+      sessionStorage.setItem("soryvo:extension-attribute-detected", "true");
+    } catch {}
+  }
+
+  attributes.forEach((attribute) => document.body.removeAttribute(attribute));
+})();
+`;
+
 const plexSans = IBM_Plex_Sans({
   variable: "--font-body",
   subsets: ["latin"],
@@ -45,6 +60,8 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${plexSans.variable} ${sourceSerif.variable} ${plexMono.variable} antialiased`}>
+        {/* Remove only known Grammarly mutations before hydration; do not mask normal mismatches. */}
+        <script dangerouslySetInnerHTML={{ __html: extensionAttributeCleanup }} />
         <ExtensionWarning />
         {children}
       </body>

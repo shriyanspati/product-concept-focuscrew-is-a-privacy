@@ -4,10 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Check,
   Clock3,
   Copy,
-  Loader2,
   Pause,
   Play,
   ShieldCheck,
@@ -19,35 +17,25 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConsentScreen } from "@/components/ConsentScreen";
 import { BreakLounge, type BreakLoungeHandle } from "@/components/BreakLounge";
 import { EndSessionReport } from "@/components/EndSessionReport";
-import { FocusCheckModal } from "@/components/FocusCheckModal";
 import { PrivacyDetailsModal } from "@/components/PrivacyDetailsModal";
-import { ScreenCheckPanel, type ScreenCheckHandle } from "@/components/ScreenCheckPanel";
 import { SoryvoLogo } from "@/components/SoryvoLogo";
 import { useLiveRoom } from "@/hooks/useLiveRoom";
-import { useExtensionActivitySignal } from "@/hooks/useExtensionActivitySignal";
 import { useSyncedPomodoro } from "@/hooks/useSyncedPomodoro";
 import { initialFocusHistory, seededMembers } from "@/lib/demoData";
-import { getFallbackFocusCoach, requestFocusCoach } from "@/lib/focusCoach";
 import {
   endBreak,
   endRoom,
   insertLiveRoomEvent,
   leaveLiveRoom,
   liveRoomsAvailable,
-  pausePomodoro,
-  resumePomodoro,
   startBreak,
   startPomodoro,
-  updateAccountabilityPulseOptIn,
   updateLiveParticipantStatus,
 } from "@/lib/liveRoomApi";
 import { localRoomAdapter } from "@/lib/storageAdapter";
-import { getSupabaseBrowserClient, isEmailSession } from "@/lib/supabaseClient";
+import { getSupabaseBrowserClient, isLiveRoomSession } from "@/lib/supabaseClient";
 import type {
   ActivitySignal,
-  FocusCheckFrequency,
-  FocusCheckStoredState,
-  FocusCoachOutput,
   FocusPoint,
   MemberStatus,
   ParticipantStatus,
@@ -80,32 +68,17 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
   const [groupFocusScore, setGroupFocusScore] = useState(84);
   const [focusHistory, setFocusHistory] = useState<FocusPoint[]>(initialFocusHistory);
   const [recentSignals, setRecentSignals] = useState<ActivitySignal[]>(["focused"]);
-  const [selectedSignal, setSelectedSignal] = useState<ActivitySignal>("focused");
+  const [, setSelectedSignal] = useState<ActivitySignal>("focused");
   const [focusedMinutes, setFocusedMinutes] = useState(14);
   const [recoveryMoments, setRecoveryMoments] = useState(0);
   const [secondsRemaining, setSecondsRemaining] = useState(25 * 60);
+  const [localPhase, setLocalPhase] = useState<"focus" | "break">("focus");
+  const [entryCountdown, setEntryCountdown] = useState(3);
+  const [roomEntryComplete, setRoomEntryComplete] = useState(false);
   const [sharingPaused, setSharingPaused] = useState(false);
-  const [coach, setCoach] = useState<FocusCoachOutput>(() =>
-    getFallbackFocusCoach({
-      userGoal: "Review photosynthesis notes and finish a five-question check",
-      subject: "AP Biology",
-      sessionDuration: 25,
-      focusedMinutes: 14,
-      recentActivitySignals: ["focused"],
-      groupFocusScore: 84,
-      groupDriftCount: 0,
-      userSelectedState: "focused",
-      energyLevel: "steady"
-    })
-  );
-  const [coachLoading, setCoachLoading] = useState(false);
-  const [coachSuccess, setCoachSuccess] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [scriptOpen, setScriptOpen] = useState(false);
-  const [goalEditing, setGoalEditing] = useState(false);
-  const [goalDraft, setGoalDraft] = useState("");
-  const [actionSteps, setActionSteps] = useState<string[] | null>(null);
   const [resetActive, setResetActive] = useState(false);
   const [inviteJoinRequired, setInviteJoinRequired] = useState(false);
   const [joinName, setJoinName] = useState("");
@@ -113,27 +86,14 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
   const [joinSubject, setJoinSubject] = useState("Study Session");
   const [joiningLiveRoom, setJoiningLiveRoom] = useState(false);
   const [joinError, setJoinError] = useState("");
-  const [focusCheckOpen, setFocusCheckOpen] = useState(false);
-  const [focusCheckFrequency, setFocusCheckFrequency] = useState<FocusCheckFrequency>("12");
-  const [nextFocusCheckAt, setNextFocusCheckAt] = useState<number | null>(null);
-  const [focusCheckNow, setFocusCheckNow] = useState<number | null>(null);
-  const [focusCheckMessage, setFocusCheckMessage] = useState("No private check yet.");
-  const [demoActivityCategory, setDemoActivityCategory] = useState<"unknown" | "social_media" | "idle">("unknown");
-  const [lastPrivateFocusCheckState, setLastPrivateFocusCheckState] = useState<FocusCheckStoredState | null>(null);
-  const [accountabilityPulseVisible, setAccountabilityPulseVisible] = useState(false);
-  const [pulseCooldownActive, setPulseCooldownActive] = useState(false);
-  const extensionActivitySignal = useExtensionActivitySignal();
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [endSessionError, setEndSessionError] = useState("");
   const [remoteSessionEnded, setRemoteSessionEnded] = useState(false);
   const endingSessionRef = useRef(false);
-  const screenCheckRef = useRef<ScreenCheckHandle | null>(null);
   const breakLoungeRef = useRef<BreakLoungeHandle | null>(null);
   const localCountdownIntervalRef = useRef<number | null>(null);
-  const focusClockIntervalRef = useRef<number | null>(null);
-  const focusCheckIntervalRef = useRef<number | null>(null);
-  const coachSuccessTimeoutRef = useRef<number | null>(null);
-  const pulseCooldownTimeoutRef = useRef<number | null>(null);
+  const entryCountdownIntervalRef = useRef<number | null>(null);
+  const autoStartAttemptedRef = useRef(false);
 
   const liveEnabled = ready && config.consentAccepted && config.mode === "live" && !config.judgeDemo && !isEndingSession;
   const liveRoom = useLiveRoom({ roomCode, config, enabled: liveEnabled });
@@ -166,6 +126,54 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
   });
 
   useEffect(() => {
+    if (!ready || !config.consentAccepted || roomEntryComplete || isEndingSession) {
+      return;
+    }
+
+    setEntryCountdown(3);
+    entryCountdownIntervalRef.current = window.setInterval(() => {
+      setEntryCountdown((count) => {
+        if (count <= 1) {
+          if (entryCountdownIntervalRef.current !== null) {
+            window.clearInterval(entryCountdownIntervalRef.current);
+            entryCountdownIntervalRef.current = null;
+          }
+          setRoomEntryComplete(true);
+          return 0;
+        }
+
+        return count - 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (entryCountdownIntervalRef.current !== null) {
+        window.clearInterval(entryCountdownIntervalRef.current);
+        entryCountdownIntervalRef.current = null;
+      }
+    };
+  }, [config.consentAccepted, isEndingSession, ready, roomEntryComplete]);
+
+  useEffect(() => {
+    if (
+      !roomEntryComplete ||
+      config.mode !== "live" ||
+      !liveRoom.snapshot ||
+      !isLiveCreator ||
+      liveRoom.snapshot.room.phase !== "lobby" ||
+      autoStartAttemptedRef.current
+    ) {
+      return;
+    }
+
+    autoStartAttemptedRef.current = true;
+    void startPomodoro(liveRoom.snapshot.room.id).catch((error) => {
+      autoStartAttemptedRef.current = false;
+      setJoinError(error instanceof Error ? error.message : "The focus timer could not start automatically.");
+    });
+  }, [config.mode, isLiveCreator, liveRoom.snapshot, roomEntryComplete]);
+
+  useEffect(() => {
     const savedConfig = localRoomAdapter.loadRoomConfig(roomCode);
 
     if (!savedConfig && roomCode !== "CREW42" && liveRoomsAvailable()) {
@@ -192,7 +200,6 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
     };
 
     setConfig(nextConfig);
-    setGoalDraft(nextConfig.goal);
     setMembers(nextConfig.judgeDemo || nextConfig.mode === "demo" ? [currentUser, ...seededMembers] : [currentUser]);
     setSecondsRemaining(nextConfig.duration * 60);
     setReady(true);
@@ -216,7 +223,7 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
       const { data } = await supabaseClient.auth.getSession();
       const metadataName = data.session?.user.user_metadata?.display_name;
 
-      if (!cancelled && isEmailSession(data.session) && typeof metadataName === "string") {
+      if (!cancelled && isLiveRoomSession(data.session) && typeof metadataName === "string") {
         setJoinName(metadataName);
       }
     }
@@ -233,7 +240,7 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
     [members]
   );
 
-  const recoveryCardVisible = groupDriftCount >= 2 || groupFocusScore < 55 || accountabilityPulseVisible;
+  const recoveryCardVisible = groupDriftCount >= 2 || groupFocusScore < 55;
 
   useEffect(() => {
     if (!liveRoom.snapshot) {
@@ -258,7 +265,6 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
       isHost: snapshot.currentParticipant.userId === snapshot.room.createdByUserId,
       mode: "live"
     }));
-    setGoalDraft(snapshot.currentParticipant.goal);
 
     const nextScore = calculateGroupFocusScore(snapshot.participants.map((participant) => participant.status));
     if (nextScore !== null) {
@@ -284,77 +290,8 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
     }
   }, [liveRoom.snapshot]);
 
-  const sharedBreakActive = config.mode === "live"
-    ? liveRoom.snapshot?.room.phase === "break"
-    : selectedSignal === "need_break";
-  const roomIsFocusPhase = config.mode === "live"
-    ? liveRoom.snapshot?.room.phase === "focus"
-    : !sharedBreakActive && !showReport;
-  const activeParticipantCount = members.filter((member) => member.sharing).length;
-  const optedInCount = members.filter((member) => member.accountabilityPulseOptIn).length;
-  const currentMemberId = liveRoom.snapshot?.currentParticipant.id ?? "current";
-  const currentAccountabilityOptedIn = members.find((member) => member.id === currentMemberId)?.accountabilityPulseOptIn ?? false;
-
   useEffect(() => {
-    const pulseEvent = liveRoom.snapshot?.events.find((event) => event.eventType === "accountability_pulse_started");
-    if (!pulseEvent) {
-      return;
-    }
-
-    const remaining = 10 * 60 * 1000 - (Date.now() - new Date(pulseEvent.createdAt).getTime());
-    setAccountabilityPulseVisible(true);
-    if (remaining <= 0) {
-      setPulseCooldownActive(false);
-      return;
-    }
-
-    setPulseCooldownActive(true);
-    const timeout = window.setTimeout(() => setPulseCooldownActive(false), remaining);
-    pulseCooldownTimeoutRef.current = timeout;
-    return () => {
-      if (pulseCooldownTimeoutRef.current === timeout) {
-        window.clearTimeout(timeout);
-        pulseCooldownTimeoutRef.current = null;
-      }
-    };
-  }, [liveRoom.snapshot?.events]);
-
-  const updateCoach = useCallback(async (signal: ActivitySignal, score = groupFocusScore) => {
-    if (endingSessionRef.current) {
-      return;
-    }
-    setCoachLoading(true);
-    setCoachSuccess(false);
-    const signals = [...recentSignals.slice(-4), signal];
-    setRecentSignals(signals);
-
-    const nextCoach = await requestFocusCoach({
-      userGoal: config.goal,
-      subject: config.subject,
-      sessionDuration: config.duration,
-      focusedMinutes,
-      recentActivitySignals: signals,
-      groupFocusScore: score,
-      groupDriftCount,
-      userSelectedState: signal,
-      energyLevel: "steady"
-    });
-
-    if (endingSessionRef.current) {
-      return;
-    }
-
-    setCoach(nextCoach);
-    setCoachLoading(false);
-    setCoachSuccess(true);
-    if (coachSuccessTimeoutRef.current !== null) {
-      window.clearTimeout(coachSuccessTimeoutRef.current);
-    }
-    coachSuccessTimeoutRef.current = window.setTimeout(() => setCoachSuccess(false), 1400);
-  }, [config.duration, config.goal, config.subject, focusedMinutes, groupDriftCount, groupFocusScore, recentSignals]);
-
-  useEffect(() => {
-    if (!ready || !config.consentAccepted || showReport || isEndingSession) {
+    if (!ready || !config.consentAccepted || !roomEntryComplete || showReport || isEndingSession) {
       return;
     }
 
@@ -369,8 +306,15 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
             window.clearInterval(localCountdownIntervalRef.current);
             localCountdownIntervalRef.current = null;
           }
-          setShowReport(true);
-          return 0;
+          if (localPhase === "focus") {
+            setLocalPhase("break");
+            setMembers((current) => current.map((member) => ({ ...member, status: member.sharing ? "taking_break" : "not_sharing_activity" })));
+            return 5 * 60;
+          }
+
+          setLocalPhase("focus");
+          setMembers((current) => current.map((member) => ({ ...member, status: member.sharing ? "focused" : "not_sharing_activity" })));
+          return config.duration * 60;
         }
 
         return seconds - 1;
@@ -383,7 +327,7 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
         localCountdownIntervalRef.current = null;
       }
     };
-  }, [config.consentAccepted, config.mode, isEndingSession, ready, showReport]);
+  }, [config.consentAccepted, config.duration, config.mode, isEndingSession, localPhase, ready, roomEntryComplete, showReport]);
 
   useEffect(() => {
     if (liveRoom.snapshot?.room.phase === "ended" && !endingSessionRef.current) {
@@ -393,66 +337,6 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
       localRoomAdapter.clearRoomConfig(config.roomCode);
     }
   }, [config.roomCode, liveRoom.snapshot?.room.phase]);
-
-  useEffect(() => {
-    const saved = window.localStorage.getItem("soryvo:focus-check-frequency") as FocusCheckFrequency | null;
-    if (saved && ["10", "12", "20", "manual"].includes(saved)) {
-      setFocusCheckFrequency(saved);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (isEndingSession) {
-      return;
-    }
-    setFocusCheckNow(Date.now());
-    focusClockIntervalRef.current = window.setInterval(() => setFocusCheckNow(Date.now()), 1000);
-    return () => {
-      if (focusClockIntervalRef.current !== null) {
-        window.clearInterval(focusClockIntervalRef.current);
-        focusClockIntervalRef.current = null;
-      }
-    };
-  }, [isEndingSession]);
-
-  useEffect(() => {
-    if (isEndingSession) {
-      setNextFocusCheckAt(null);
-      return;
-    }
-    window.localStorage.setItem("soryvo:focus-check-frequency", focusCheckFrequency);
-
-    if (focusCheckFrequency === "manual") {
-      setNextFocusCheckAt(null);
-      return;
-    }
-
-    setNextFocusCheckAt(Date.now() + Number(focusCheckFrequency) * 60 * 1000);
-  }, [focusCheckFrequency, isEndingSession]);
-
-  useEffect(() => {
-    if (isEndingSession || !config.consentAccepted || focusCheckFrequency === "manual" || !nextFocusCheckAt || focusCheckOpen || showReport) {
-      return;
-    }
-
-    if (liveRoom.snapshot?.room.phase === "break") {
-      return;
-    }
-
-    focusCheckIntervalRef.current = window.setInterval(() => {
-      if (Date.now() >= nextFocusCheckAt && config.goal.trim()) {
-        setFocusCheckOpen(true);
-        setNextFocusCheckAt(Date.now() + Number(focusCheckFrequency) * 60 * 1000);
-      }
-    }, 1000);
-
-    return () => {
-      if (focusCheckIntervalRef.current !== null) {
-        window.clearInterval(focusCheckIntervalRef.current);
-        focusCheckIntervalRef.current = null;
-      }
-    };
-  }, [config.consentAccepted, config.goal, focusCheckFrequency, focusCheckOpen, isEndingSession, liveRoom.snapshot?.room.phase, nextFocusCheckAt, showReport]);
 
   async function acceptConsent() {
     setJoiningLiveRoom(true);
@@ -492,8 +376,8 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
 
   function simulate(signal: ActivitySignal) {
     setSelectedSignal(signal);
+    setRecentSignals((signals) => [...signals.slice(-4), signal]);
     setResetActive(false);
-    setActionSteps(null);
 
     if (signal === "focused") {
       applyScore(88);
@@ -533,7 +417,6 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
       setFocusedMinutes((minutes) => minutes + 4);
       setMembers((current) => current.map((member) => ({ ...member, status: member.sharing ? "focused" : "not_sharing_activity" })));
       setResetActive(false);
-      setAccountabilityPulseVisible(false);
     }
 
     if (signal === "need_break") {
@@ -543,8 +426,6 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
       );
     }
 
-    const nextScore = scoreForSignal(signal);
-    void updateCoach(signal, nextScore);
   }
 
   function applyScore(score: number) {
@@ -561,7 +442,6 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
   function startReset() {
     setRecoveryMoments((count) => count + 1);
     setResetActive(true);
-    setAccountabilityPulseVisible(false);
     setSelectedSignal("reset_started");
     applyScore(57);
     if (config.mode !== "live") {
@@ -570,37 +450,11 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
     if (liveRoom.snapshot) {
       void insertLiveRoomEvent({ roomId: liveRoom.snapshot.room.id, eventType: "shared_reset_started" });
     }
-    void updateCoach("reset_started", 57);
   }
 
   function keepGoing() {
     setSelectedSignal("focused");
     applyScore(Math.max(groupFocusScore, 63));
-    void updateCoach("focused", Math.max(groupFocusScore, 63));
-  }
-
-  function takeSharedBreak() {
-    setSelectedSignal("need_break");
-    setMembers((current) => current.map((member) => ({ ...member, status: member.sharing ? "taking_break" : "not_sharing_activity" })));
-    applyScore(60);
-    setAccountabilityPulseVisible(false);
-    if (liveRoom.snapshot) {
-      void startBreak(liveRoom.snapshot.room.id).catch((error) => {
-        setJoinError(error instanceof Error ? error.message : "Only the room creator can start a shared break.");
-      });
-      void updateCurrentPublicStatus("taking_break");
-    }
-    void updateCoach("need_break", 60);
-  }
-
-  function takeIntentionalBreak() {
-    if (config.mode === "live") {
-      void updateCurrentPublicStatus("taking_break");
-      void updateCoach("need_break", 60);
-      return;
-    }
-
-    simulate("need_break");
   }
 
   function toggleSharing() {
@@ -615,86 +469,7 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
     void updateCurrentPublicStatus(sharingPaused ? "focused" : "not_sharing_activity");
   }
 
-  async function changeAccountabilityPulseOptIn(optedIn: boolean) {
-    setMembers((current) => current.map((member) =>
-      member.id === currentMemberId ? { ...member, accountabilityPulseOptIn: optedIn } : member
-    ));
-
-    if (!liveRoom.snapshot?.currentParticipant.id) {
-      return;
-    }
-
-    try {
-      await updateAccountabilityPulseOptIn({
-        participantId: liveRoom.snapshot.currentParticipant.id,
-        optedIn
-      });
-    } catch {
-      setMembers((current) => current.map((member) =>
-        member.id === currentMemberId ? { ...member, accountabilityPulseOptIn: !optedIn } : member
-      ));
-      setJoinError("Accountability Pulse preference could not sync.");
-    }
-  }
-
-  async function requestAccountabilityPulse() {
-    if (members.length < 3 || activeParticipantCount < 3) {
-      return "Accountability Pulse needs at least three active room members.";
-    }
-    if (optedInCount !== members.length) {
-      return "The pulse stays private until every current room member opts in.";
-    }
-    if (!roomIsFocusPhase) {
-      return "Accountability Pulse is available only during a focus phase.";
-    }
-    if (pulseCooldownActive) {
-      return "The room already received a pulse in the last ten minutes.";
-    }
-
-    if (liveRoom.snapshot) {
-      try {
-        await insertLiveRoomEvent({
-          roomId: liveRoom.snapshot.room.id,
-          eventType: "accountability_pulse_started"
-        });
-      } catch {
-        return "The anonymous pulse could not sync. Your private reset request was not shared.";
-      }
-    }
-
-    setAccountabilityPulseVisible(true);
-    setPulseCooldownActive(true);
-    setRecoveryMoments((count) => count + 1);
-    if (pulseCooldownTimeoutRef.current !== null) {
-      window.clearTimeout(pulseCooldownTimeoutRef.current);
-    }
-    pulseCooldownTimeoutRef.current = window.setTimeout(() => setPulseCooldownActive(false), 10 * 60 * 1000);
-    return "Anonymous lock-in invitation sent. No identity or screen details were shared.";
-  }
-
-  function updateGoal() {
-    const nextGoal = goalDraft.trim() || config.goal;
-    const nextConfig = { ...config, goal: nextGoal };
-    setConfig(nextConfig);
-    localRoomAdapter.saveRoomConfig(nextConfig);
-    setMembers((current) =>
-      current.map((member) => member.id === "current" ? { ...member, goal: nextGoal } : member)
-    );
-    setGoalEditing(false);
-    void updateCoach("focused");
-  }
-
-  function markStuck() {
-    setSelectedSignal("stuck");
-    setMembers((current) =>
-      current.map((member) => member.id === "current" ? { ...member, status: "needs_reset" } : member)
-    );
-    applyScore(Math.min(groupFocusScore, 54));
-    void updateCurrentPublicStatus("needs_reset");
-    void updateCoach("stuck", Math.min(groupFocusScore, 54));
-  }
-
-  async function updateCurrentPublicStatus(status: ParticipantStatus, focusCheckState?: FocusCheckStoredState) {
+  async function updateCurrentPublicStatus(status: ParticipantStatus) {
     setMembers((current) =>
       current.map((member) => member.id === "current" || member.id === config.liveParticipantId ? { ...member, status } : member)
     );
@@ -703,69 +478,12 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
       try {
         await updateLiveParticipantStatus({
           participantId: liveRoom.snapshot.currentParticipant.id,
-          status,
-          focusCheckState
+          status
         });
       } catch {
         setJoinError("Live status update could not sync. Your local room view is still usable.");
       }
     }
-  }
-
-  function breakTaskIntoSteps() {
-    setActionSteps([
-      `Open the exact material for ${config.subject}.`,
-      `Spend five minutes on: ${coach.microTask}.`,
-      "Mark one question for the group if you still feel stuck."
-    ]);
-    void updateCoach(selectedSignal);
-  }
-
-  function explainNextStep() {
-    setCoach((current) => ({
-      ...current,
-      privateMessage: `Next step: ${current.microTask}. Keep it visible, finish only that piece, then check back in.`
-    }));
-  }
-
-  function openFocusCheck() {
-    if (!config.goal.trim()) {
-      setFocusCheckMessage("Add one clear study goal before starting a Focus Check.");
-      return;
-    }
-
-    if (liveRoom.snapshot?.room.phase === "break") {
-      setFocusCheckMessage("Focus Check pauses during a shared break.");
-      return;
-    }
-
-    setFocusCheckOpen(true);
-  }
-
-  function completeFocusCheck(result: {
-    publicStatus: ParticipantStatus;
-    storedState: FocusCheckStoredState;
-    focusCheckResult: { message: string; suggestedAction: string };
-  }) {
-    setFocusCheckMessage(`${result.focusCheckResult.message} ${result.focusCheckResult.suggestedAction}`);
-    setLastPrivateFocusCheckState(result.storedState);
-    void updateCurrentPublicStatus(result.publicStatus, result.storedState);
-
-    if (focusCheckFrequency !== "manual") {
-      setNextFocusCheckAt(Date.now() + Number(focusCheckFrequency) * 60 * 1000);
-    }
-  }
-
-  function triggerDemoFocusCheck(kind: "clear" | "vague" | "stuck" | "break" | "mismatch") {
-    if (kind === "mismatch") {
-      setDemoActivityCategory("social_media");
-    } else if (kind === "break") {
-      setDemoActivityCategory("idle");
-    } else {
-      setDemoActivityCategory("unknown");
-    }
-
-    setFocusCheckOpen(true);
   }
 
   async function copyInviteLink() {
@@ -776,49 +494,6 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
 
     await window.navigator.clipboard.writeText(`${window.location.origin}/room/${config.roomCode}`);
     setJoinError("Invite link copied.");
-  }
-
-  async function runLiveTimerAction(action: "start" | "pause" | "resume" | "break" | "focus") {
-    if (!liveRoom.snapshot) {
-      setJoinError("Live room is still connecting.");
-      return;
-    }
-
-    if (!isLiveCreator) {
-      setJoinError("Only the room creator can control the shared timer.");
-      return;
-    }
-
-    try {
-      if (action === "start") {
-        await startPomodoro(liveRoom.snapshot.room.id);
-      }
-
-      if (action === "pause") {
-        await pausePomodoro(liveRoom.snapshot.room.id);
-      }
-
-      if (action === "resume") {
-        await resumePomodoro(liveRoom.snapshot.room.id);
-      }
-
-      if (action === "break") {
-        await startBreak(liveRoom.snapshot.room.id);
-      }
-
-      if (action === "focus") {
-        await endBreak(liveRoom.snapshot.room.id);
-      }
-
-    } catch (error) {
-      setJoinError(error instanceof Error ? error.message : "Shared timer action failed.");
-    }
-  }
-
-  async function stopScreenCheck() {
-    console.log("[Soryvo] Cleanup: stopping Screen Check");
-    await screenCheckRef.current?.stop();
-    console.log("[Soryvo] Cleanup complete: Screen Check");
   }
 
   async function disconnectBreakLounge() {
@@ -835,7 +510,7 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
 
   async function clearRoomTimers() {
     console.log("[Soryvo] Cleanup: clearing room timers");
-    const intervalRefs = [localCountdownIntervalRef, focusClockIntervalRef, focusCheckIntervalRef];
+    const intervalRefs = [localCountdownIntervalRef, entryCountdownIntervalRef];
     intervalRefs.forEach((timerRef) => {
       if (timerRef.current !== null) {
         window.clearInterval(timerRef.current);
@@ -843,17 +518,7 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
       }
     });
 
-    const timeoutRefs = [coachSuccessTimeoutRef, pulseCooldownTimeoutRef];
-    timeoutRefs.forEach((timerRef) => {
-      if (timerRef.current !== null) {
-        window.clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-    });
-
     syncedPomodoro.clearTimer();
-    setNextFocusCheckAt(null);
-    setFocusCheckOpen(false);
     console.log("[Soryvo] Cleanup complete: room timers");
   }
 
@@ -868,19 +533,16 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
 
     const roomId = liveRoom.snapshot?.room.id ?? config.liveRoomId ?? null;
     const isHost = config.mode !== "live" || isLiveCreator || config.isHost === true;
-    const screenCheckActive = screenCheckRef.current?.isActive() ?? false;
     const livekitConnected = breakLoungeRef.current?.isConnected() ?? false;
 
     console.log("[Soryvo] Ending session", {
       roomId,
       isHost,
-      screenCheckActive,
       livekitConnected,
     });
 
     const diagnostics: string[] = [];
     const cleanupResults = await Promise.allSettled([
-      stopScreenCheck(),
       disconnectBreakLounge(),
       unsubscribeRoom(),
       clearRoomTimers(),
@@ -888,7 +550,7 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
 
     cleanupResults.forEach((result, index) => {
       if (result.status === "rejected") {
-        const labels = ["Screen Check", "Break Lounge", "Realtime", "room timers"];
+        const labels = ["Break Lounge", "Realtime", "room timers"];
         const message = `${labels[index]} cleanup failed: ${getErrorMessage(result.reason)}`;
         diagnostics.push(message);
         console.warn(`[Soryvo] ${message}`);
@@ -931,7 +593,7 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
       const supabase = getSupabaseBrowserClient();
       const { data } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
 
-      if (!isEmailSession(data.session)) {
+      if (!isLiveRoomSession(data.session)) {
         const params = new URLSearchParams();
         const nextName = joinName.trim();
 
@@ -940,7 +602,7 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
         }
 
         params.set("next", `/room/${roomCode}`);
-        setJoinError("Sign in with email before joining a live room.");
+        setJoinError("Sign in before joining a live room.");
         router.push(`/signin?${params.toString()}`);
         return;
       }
@@ -958,7 +620,6 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
       isHost: false
     };
     setConfig(nextConfig);
-    setGoalDraft(nextConfig.goal);
     setInviteJoinRequired(false);
   }
 
@@ -997,7 +658,6 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
     setSecondsRemaining(config.duration * 60);
     setResetActive(false);
     setMembers((current) => current.map((member) => ({ ...member, status: member.sharing ? "focused" : "not_sharing_activity" })));
-    void updateCoach("focused", 84);
   }
 
   if (!ready) {
@@ -1088,6 +748,27 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
           >
             Return to rooms
           </button>
+        </section>
+      </main>
+    );
+  }
+
+  if (!roomEntryComplete) {
+    return (
+      <main className="grid min-h-screen place-items-center px-5 py-10">
+        <section className="w-full max-w-xl text-center">
+          <SoryvoLogo variant="mark" size={48} priority className="mx-auto object-contain" />
+          <p className="mt-6 text-sm font-medium text-muted">Joining room {config.roomCode}</p>
+          <p className="mt-4 font-mono text-7xl font-semibold text-primary" aria-live="polite" aria-label={`${entryCountdown} seconds until focus starts`}>
+            {entryCountdown}
+          </p>
+          <p className="mt-2 text-sm font-semibold uppercase text-muted">
+            {entryCountdown === 3 ? "Three" : entryCountdown === 2 ? "Two" : "One"}
+          </p>
+          <h1 className="mt-5 text-3xl font-semibold text-primary">Your focus block starts automatically.</h1>
+          <p className="mx-auto mt-3 max-w-md leading-7 text-muted">
+            Work for {config.duration} minutes, then the room unlocks a five-minute break.
+          </p>
         </section>
       </main>
     );
@@ -1184,25 +865,16 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
         )}
       </div>
 
-      <div className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-[1fr_23rem]">
+      <div className="mx-auto max-w-6xl">
         <section className="space-y-5">
-          {config.mode === "live" && liveRoom.snapshot && (
+          {(config.mode !== "live" || liveRoom.snapshot) && (
             <SharedPomodoroPanel
-              phase={syncedPomodoro.phase}
-              label={syncedPomodoro.label}
-              remainingLabel={syncedPomodoro.remainingLabel}
-              progress={syncedPomodoro.progress}
-              cycleNumber={syncedPomodoro.cycleNumber}
-              isRunning={syncedPomodoro.isRunning}
-              isCreator={isLiveCreator}
-              onStart={() => void runLiveTimerAction("start")}
-              onPause={() => void runLiveTimerAction("pause")}
-              onResume={() => void runLiveTimerAction("resume")}
-              onBreak={() => void runLiveTimerAction("break")}
-              onFocus={() => void runLiveTimerAction("focus")}
-              onSuggestBreak={() => {
-                setJoinError("Break suggestion noted anonymously. The room creator can start the shared break.");
-              }}
+              phase={config.mode === "live" ? syncedPomodoro.phase : localPhase}
+              label={config.mode === "live" ? syncedPomodoro.label : localPhase === "focus" ? "Focus session" : "Five-minute break"}
+              remainingLabel={timerLabel}
+              progress={progress}
+              cycleNumber={config.mode === "live" ? syncedPomodoro.cycleNumber : 1}
+              isRunning={config.mode === "live" ? syncedPomodoro.isRunning : true}
             />
           )}
 
@@ -1277,14 +949,8 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <p className="text-sm text-muted">Anonymous group recovery</p>
-                    <h2 className="mt-2 text-2xl font-semibold">
-                      {accountabilityPulseVisible ? "Momentum dip in the room." : "Focus dip detected."}
-                    </h2>
-                    <p className="mt-2 text-muted">
-                      {accountabilityPulseVisible
-                        ? "Want a 90-second lock-in together? No identity or private screen details were shared."
-                        : "Want to start a three-minute group lock-in? Soryvo never names who caused the dip."}
-                    </p>
+                    <h2 className="mt-2 text-2xl font-semibold">Focus dip detected.</h2>
+                    <p className="mt-2 text-muted">Want to start a three-minute group lock-in? Soryvo never names who caused the dip.</p>
                     {resetActive && (
                       <p className="mt-3 border-l-2 border-focus pl-3 text-sm text-primary">
                         Reset prompt: one quiet minute, one tiny next step, then a group check-in.
@@ -1298,9 +964,6 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
                     <button type="button" onClick={keepGoing} className="rounded-lg border border-border px-4 py-3 font-semibold text-primary transition hover:bg-surfaceHover">
                       Keep Going
                     </button>
-                    <button type="button" onClick={takeSharedBreak} className="rounded-lg bg-break px-4 py-3 font-semibold text-primary transition hover:bg-breakDark">
-                      Take a Shared Break
-                    </button>
                   </div>
                 </div>
               </motion.section>
@@ -1309,7 +972,7 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
 
           <BreakLounge
             ref={breakLoungeRef}
-            open={config.judgeDemo ? selectedSignal === "need_break" : liveRoom.snapshot?.room.phase === "break"}
+            open={config.mode === "live" ? liveRoom.snapshot?.room.phase === "break" : localPhase === "break"}
             roomId={liveRoom.snapshot?.room.id}
             displayName={config.displayName}
             demoMode={config.judgeDemo}
@@ -1332,191 +995,14 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
                 <SimulatorButton label="Back on Track" signal="back_on_track" onClick={simulate} />
                 <SimulatorButton label="Need a Break" signal="need_break" onClick={simulate} />
               </div>
-              <div className="mt-5 border-t border-border pt-5">
-                <p className="mb-3 text-sm font-semibold text-primary">Focus Check demo controls</p>
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  <button type="button" onClick={openFocusCheck} className="rounded-control border border-border px-4 py-3 text-left font-semibold text-primary transition hover:bg-surfaceHover">
-                    Trigger Focus Check
-                  </button>
-                  <button type="button" onClick={() => triggerDemoFocusCheck("clear")} className="rounded-control border border-border px-4 py-3 text-left font-semibold text-primary transition hover:bg-surfaceHover">
-                    Simulate Clear Alignment
-                  </button>
-                  <button type="button" onClick={() => triggerDemoFocusCheck("vague")} className="rounded-control border border-border px-4 py-3 text-left font-semibold text-primary transition hover:bg-surfaceHover">
-                    Simulate Vague Answer
-                  </button>
-                  <button type="button" onClick={() => triggerDemoFocusCheck("stuck")} className="rounded-control border border-border px-4 py-3 text-left font-semibold text-primary transition hover:bg-surfaceHover">
-                    Simulate Stuck
-                  </button>
-                  <button type="button" onClick={() => triggerDemoFocusCheck("break")} className="rounded-control border border-border px-4 py-3 text-left font-semibold text-primary transition hover:bg-surfaceHover">
-                    Simulate Intentional Break
-                  </button>
-                  <button type="button" onClick={() => triggerDemoFocusCheck("mismatch")} className="rounded-control border border-border px-4 py-3 text-left font-semibold text-primary transition hover:bg-surfaceHover">
-                    Simulate Activity Mismatch
-                  </button>
-                </div>
-              </div>
             </section>
           )}
         </section>
 
-        <aside className="space-y-5">
-          <section className="border-b border-border pb-6">
-            <div className="mb-5 flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted">Personal task</p>
-                <h2 className="mt-2 text-xl font-semibold">Your focus lane</h2>
-              </div>
-            </div>
-
-            {goalEditing ? (
-              <div className="space-y-3">
-                <textarea
-                  value={goalDraft}
-                  onChange={(event) => setGoalDraft(event.target.value)}
-                  rows={4}
-                  className="w-full resize-none rounded-lg border border-border bg-background px-3 py-3 text-sm"
-                />
-                <button type="button" onClick={updateGoal} className="w-full rounded-lg bg-focus px-4 py-3 font-semibold text-white transition hover:bg-focusDark">
-                  Save Goal
-                </button>
-              </div>
-            ) : (
-              <p className="border-l-2 border-border pl-4 text-sm leading-6 text-primary">
-                {config.goal}
-              </p>
-            )}
-
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              <MetricSmall label="Progress" value={`${Math.max(0, progress)}%`} />
-              <MetricSmall label="Focus streak" value={`${focusedMinutes}m`} />
-            </div>
-
-            <ScreenCheckPanel
-              ref={screenCheckRef}
-              goal={config.goal}
-              subject={config.subject}
-              activityCategory={config.judgeDemo
-                ? demoActivityCategory
-                : extensionActivitySignal.enabled ? extensionActivitySignal.category : "unknown"}
-              privateFocusCheckState={lastPrivateFocusCheckState}
-              focusCheckOpen={focusCheckOpen}
-              isFocusPhase={roomIsFocusPhase}
-              pauseRequested={sharedBreakActive || showReport}
-              pauseReason={sharedBreakActive
-                ? "Screen Check paused during the shared break."
-                : "Screen Check paused because the session ended."}
-              judgeDemo={config.judgeDemo}
-              accountabilityOptedIn={currentAccountabilityOptedIn}
-              participantCount={members.length}
-              activeParticipantCount={activeParticipantCount}
-              optedInCount={optedInCount}
-              pulseCooldownActive={pulseCooldownActive}
-              onAccountabilityOptInChange={changeAccountabilityPulseOptIn}
-              onAccountabilityPulse={requestAccountabilityPulse}
-            />
-
-            <div className="mt-5 border-t border-border pt-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-primary">Focus Check</p>
-                  <p className="mt-1 text-xs text-muted">{formatFocusCheckSchedule(nextFocusCheckAt, focusCheckFrequency, focusCheckNow)}</p>
-                </div>
-                <select
-                  value={focusCheckFrequency}
-                  onChange={(event) => setFocusCheckFrequency(event.target.value as FocusCheckFrequency)}
-                  className="rounded-lg border border-border bg-surface px-2 py-2 text-xs text-primary"
-                  aria-label="Focus Check frequency"
-                >
-                  <option value="10">Every 10 minutes</option>
-                  <option value="12">Every 12 minutes</option>
-                  <option value="20">Every 20 minutes</option>
-                  <option value="manual">Only when I request it</option>
-                </select>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-muted">{focusCheckMessage}</p>
-              <button
-                type="button"
-                onClick={openFocusCheck}
-                className="mt-3 w-full rounded-lg bg-focus px-4 py-3 font-semibold text-white transition hover:bg-focusDark"
-              >
-                Check my focus
-              </button>
-            </div>
-
-            <div className="mt-5 space-y-2">
-              <button type="button" onClick={() => setGoalEditing(true)} className="w-full rounded-lg border border-border px-4 py-3 font-semibold text-primary transition hover:bg-surfaceHover">
-                Update Goal
-              </button>
-              <button type="button" onClick={markStuck} className="w-full rounded-lg border border-border px-4 py-3 font-semibold text-primary transition hover:bg-surfaceHover">
-                I&apos;m Stuck
-              </button>
-              <button type="button" onClick={takeIntentionalBreak} className="w-full rounded-lg bg-break px-4 py-3 font-semibold text-primary transition hover:bg-breakDark">
-                Take Intentional Break
-              </button>
-            </div>
-          </section>
-
-          <section className="border-b border-border pb-6">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted">Focus coach</p>
-                <h2 className="mt-2 text-xl font-semibold">Supportive next move</h2>
-              </div>
-              {coachLoading && <Loader2 aria-hidden="true" className="animate-spin text-muted" />}
-            </div>
-
-            <div className="border-l-2 border-focus pl-4">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-xs text-muted">
-                  {coach.status.replace("_", " ")}
-                </span>
-                {coachSuccess && <span className="inline-flex items-center gap-1 text-xs text-muted"><Check size={14} /> Updated</span>}
-              </div>
-              <p className="leading-7 text-primary">{coach.privateMessage}</p>
-              {coach.groupMessage && (
-                <p className="mt-3 border-l-2 border-focus pl-3 text-sm leading-6 text-primary">
-                  {coach.groupMessage}
-                </p>
-              )}
-            </div>
-
-            {actionSteps && (
-              <div className="mt-4 border-t border-border pt-4">
-                <p className="font-semibold">Tiny task plan</p>
-                <ol className="mt-3 space-y-2 text-sm text-muted">
-                  {actionSteps.map((step) => (
-                    <li key={step}>{step}</li>
-                  ))}
-                </ol>
-              </div>
-            )}
-
-            <div className="mt-5 space-y-2">
-              <button type="button" onClick={() => updateCoach(selectedSignal)} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-focus px-4 py-3 font-semibold text-white transition hover:bg-focusDark">
-                Get a Reset Prompt
-              </button>
-              <button type="button" onClick={breakTaskIntoSteps} className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-3 font-semibold text-primary transition hover:bg-surfaceHover">
-                Break Task Into Steps
-              </button>
-              <button type="button" onClick={explainNextStep} className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-3 font-semibold text-primary transition hover:bg-surfaceHover">
-                Explain My Next Step
-              </button>
-            </div>
-          </section>
-        </aside>
       </div>
 
       <PrivacyDetailsModal open={privacyOpen} onClose={() => setPrivacyOpen(false)} />
       <DemoScriptPanel open={scriptOpen} onClose={() => setScriptOpen(false)} />
-      <FocusCheckModal
-        open={focusCheckOpen}
-        goal={config.goal}
-        subject={config.subject}
-        demoCategory={config.judgeDemo ? demoActivityCategory : undefined}
-        extensionSignal={extensionActivitySignal}
-        onClose={() => setFocusCheckOpen(false)}
-        onComplete={completeFocusCheck}
-      />
       {showReport && (
         <EndSessionReport
           report={buildReport()}
@@ -1572,15 +1058,6 @@ function SimulatorButton({
   );
 }
 
-function MetricSmall({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="border-t border-border pt-3">
-      <p className="text-xs text-muted">{label}</p>
-      <p className="mt-1 text-lg font-semibold">{value}</p>
-    </div>
-  );
-}
-
 function RoomConnectionIndicator({
   mode,
   connectionState
@@ -1619,14 +1096,7 @@ function SharedPomodoroPanel({
   remainingLabel,
   progress,
   cycleNumber,
-  isRunning,
-  isCreator,
-  onStart,
-  onPause,
-  onResume,
-  onBreak,
-  onFocus,
-  onSuggestBreak
+  isRunning
 }: {
   phase: RoomPhase;
   label: string;
@@ -1634,13 +1104,6 @@ function SharedPomodoroPanel({
   progress: number;
   cycleNumber: number;
   isRunning: boolean;
-  isCreator: boolean;
-  onStart: () => void;
-  onPause: () => void;
-  onResume: () => void;
-  onBreak: () => void;
-  onFocus: () => void;
-  onSuggestBreak: () => void;
 }) {
   return (
     <section className="border-b border-border pb-6">
@@ -1649,12 +1112,14 @@ function SharedPomodoroPanel({
           <p className="text-sm text-muted">Shared Pomodoro</p>
           <h2 className="mt-2 text-2xl font-semibold">{label}</h2>
           <p className="mt-2 text-sm text-muted">
-            Cycle {cycleNumber}. Timer control is synced for the room and limited to the creator.
+            Cycle {cycleNumber}. Focus runs for the selected time, followed by one five-minute break.
           </p>
         </div>
         <div className="text-left lg:text-right">
           <p className="font-mono text-3xl font-semibold text-primary">{remainingLabel}</p>
-          <p className="mt-1 text-xs text-muted">{isRunning ? "Running" : "Paused or waiting"}</p>
+          <p className="mt-1 text-xs text-muted">
+            {phase === "lobby" ? "Starting automatically" : isRunning ? phase === "break" ? "Break unlocked" : "Working together" : "Syncing timer"}
+          </p>
         </div>
       </div>
 
@@ -1662,38 +1127,11 @@ function SharedPomodoroPanel({
         <div className="h-full rounded-small bg-focus transition-[width] duration-200" style={{ width: `${progress}%` }} />
       </div>
 
-      <div className="mt-5 flex flex-wrap gap-2">
-        {phase === "lobby" && (
-          <button type="button" onClick={onStart} disabled={!isCreator} className="rounded-control bg-focus px-4 py-3 font-semibold text-white transition hover:bg-focusDark disabled:cursor-not-allowed disabled:opacity-45">
-            Start Focus Session
-          </button>
-        )}
-        {phase === "focus" && (
-          <>
-            <button type="button" onClick={isRunning ? onPause : onResume} disabled={!isCreator} className="rounded-control border border-border px-4 py-3 font-semibold text-primary transition hover:bg-surfaceHover disabled:cursor-not-allowed disabled:opacity-45">
-              {isRunning ? "Pause Timer" : "Resume Timer"}
-            </button>
-            <button type="button" onClick={onBreak} disabled={!isCreator} className="rounded-control bg-break px-4 py-3 font-semibold text-primary transition hover:bg-breakDark disabled:cursor-not-allowed disabled:opacity-45">
-              Start Break
-            </button>
-          </>
-        )}
-        {phase === "break" && (
-          <button type="button" onClick={onFocus} disabled={!isCreator} className="rounded-control bg-focus px-4 py-3 font-semibold text-white transition hover:bg-focusDark disabled:cursor-not-allowed disabled:opacity-45">
-            Back to Focus
-          </button>
-        )}
-        {!isCreator && phase === "focus" && (
-          <button type="button" onClick={onSuggestBreak} className="rounded-control border border-border px-4 py-3 font-semibold text-primary transition hover:bg-surfaceHover">
-            Suggest a Break
-          </button>
-        )}
-        {!isCreator && phase !== "focus" && (
-          <span className="inline-flex items-center rounded-control border border-border px-4 py-3 text-sm text-muted">
-            Waiting for the room creator
-          </span>
-        )}
-      </div>
+      <p className="mt-5 text-sm font-medium text-primary">
+        {phase === "break"
+          ? `${remainingLabel} left in your five-minute break.`
+          : `${remainingLabel} until your five-minute break.`}
+      </p>
     </section>
   );
 }
@@ -1725,21 +1163,6 @@ function DemoScriptPanel({ open, onClose }: { open: boolean; onClose: () => void
       </div>
     </div>
   );
-}
-
-function scoreForSignal(signal: ActivitySignal) {
-  const scores: Record<ActivitySignal, number> = {
-    focused: 88,
-    task_switch: 62,
-    long_idle: 52,
-    group_drift: 38,
-    back_on_track: 86,
-    need_break: 58,
-    stuck: 54,
-    reset_started: 57
-  };
-
-  return scores[signal];
 }
 
 function calculateGroupFocusScore(statuses: ParticipantStatus[]) {
@@ -1786,19 +1209,6 @@ function formatSeconds(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
   const seconds = (totalSeconds % 60).toString().padStart(2, "0");
   return `${minutes}:${seconds}`;
-}
-
-function formatFocusCheckSchedule(nextFocusCheckAt: number | null, frequency: FocusCheckFrequency, now: number | null) {
-  if (frequency === "manual") {
-    return "Only when I request it";
-  }
-
-  if (!nextFocusCheckAt || !now) {
-    return `Every ${frequency} minutes`;
-  }
-
-  const remaining = Math.max(0, Math.ceil((nextFocusCheckAt - now) / 1000));
-  return `Next check in ${formatSeconds(remaining)}`;
 }
 
 function getErrorMessage(error: unknown) {

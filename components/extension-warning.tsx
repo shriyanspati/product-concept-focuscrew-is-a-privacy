@@ -4,22 +4,26 @@ import { useEffect, useState } from "react";
 
 const dismissalKey = "soryvo:solvely-extension-warning-dismissed";
 const extensionAttribute = "data-solvely-extension";
+const detectedExtensionKey = "soryvo:extension-attribute-detected";
 
 export function ExtensionWarning() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    // This targets only Solvely's known root attribute; normal hydration errors must remain visible.
+    // Detect only known extension mutations; normal hydration errors must remain visible.
     const updateVisibility = () => {
       let dismissed = false;
+      let knownExtensionDetected = false;
 
       try {
         dismissed = window.sessionStorage.getItem(dismissalKey) === "true";
+        knownExtensionDetected = window.sessionStorage.getItem(detectedExtensionKey) === "true";
       } catch {
         dismissed = false;
       }
 
-      setVisible(document.documentElement.hasAttribute(extensionAttribute) && !dismissed);
+      const solvelyDetected = document.documentElement.hasAttribute(extensionAttribute);
+      setVisible((solvelyDetected || knownExtensionDetected) && !dismissed);
     };
 
     updateVisibility();
@@ -57,7 +61,7 @@ export function ExtensionWarning() {
         <div>
           <p className="font-semibold text-primary">Browser extension detected</p>
           <p className="mt-1 text-sm leading-6 text-muted">
-            A browser extension is modifying this page before it loads, which can cause development warnings or unexpected behavior. Try opening Soryvo in an Incognito/InPrivate window or temporarily disable the Solvely extension.
+            A browser extension is modifying this page before it loads, which can cause development warnings or unexpected behavior. Try opening Soryvo in an Incognito/InPrivate window or temporarily disable extensions such as Grammarly or Solvely.
           </p>
         </div>
         <button

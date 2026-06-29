@@ -6,4 +6,9 @@ export {
   getSupabaseUrl,
   isSupabaseConfigured
 } from "@/lib/supabase/client";
-export { ensureEmailSession, isEmailSession } from "@/lib/supabase/ensureAnonymousSession";
+export {
+  ensureEmailSession,
+  ensureLiveRoomSession,
+  isEmailSession,
+  isLiveRoomSession
+} from "@/lib/supabase/ensureAnonymousSession";

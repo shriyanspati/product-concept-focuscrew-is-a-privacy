@@ -30,14 +30,14 @@ Red is intentionally sparse and only appears in important moments: primary butto
 
 With Supabase configured, normal rooms are real multiplayer study rooms:
 
-* Passwordless email sign-in is required before creating or joining a live room.
-* Room creation happens through the `create_live_room` RPC.
-* Joining happens through the `join_live_room` RPC.
-* Participants, shared timer state, room phases, broad statuses, breaks, and room events update through Supabase Realtime.
-* Real rooms only show real participants and never include seeded demo users.
-* Invite links use `/room/[code]`.
-* Hosts can end a session for everyone, while participants can leave without ending the room.
-* Shared Pomodoro sessions stay synchronized across everyone in the room.
+- Name and email entry creates a private anonymous Supabase session; no password or email verification is required.
+- Room creation happens through the `create_live_room` RPC.
+- Joining happens through the `join_live_room` RPC.
+- Participants, shared timer state, room phases, broad statuses, breaks, and room events update through Supabase Realtime.
+- Real rooms only show real participants and never include seeded demo users.
+- Invite links use `/room/[code]`.
+- Hosts can end a session for everyone, while participants can leave without ending the room.
+- Shared focus sessions and five-minute breaks stay synchronized across the room.
 
 Without Supabase credentials, normal rooms run in clearly labeled `Local Preview Mode`. They do not pretend to be live multiplayer rooms or show fake classmates.
 
@@ -154,7 +154,7 @@ Soryvo supports study flow, shared accountability, and attention recovery. It is
 * Recharts
 * Supabase PostgreSQL
 * Supabase Realtime
-* Supabase passwordless email authentication
+* Supabase anonymous guest authentication
 * LiveKit
 * LocalStorage for local preferences and demo persistence
 * Optional server-side OpenAI integration with deterministic fallback
@@ -173,6 +173,14 @@ Open:
 ```txt
 http://localhost:3000
 ```
+
+### Development authentication bypass
+
+Soryvo uses anonymous Supabase guest sessions after the user enters a display name and valid email-shaped value. No magic link is sent. The email remains local while the temporary Supabase user provides a real JWT for Realtime, RLS, live rooms, and LiveKit.
+
+Set `NEXT_PUBLIC_GUEST_ACCESS=false` only when replacing guest access with another authentication provider.
+
+Anonymous Sign-Ins must be enabled in the Supabase project used for development. Prefer a separate development project because anonymous users receive the `authenticated` database role.
 
 ## Environment Variables
 
@@ -205,31 +213,17 @@ Never commit `.env.local`, API keys, or service-role keys to GitHub.
 ## Supabase Setup
 
 1. Create a Supabase project.
-2. In Authentication settings, enable Email Auth.
-3. Turn on email confirmation or magic-link sign-in.
-4. Set the Auth Site URL to:
-
-```txt
-http://localhost:3000
-```
-
-5. Add these redirect URLs:
-
-```txt
-http://localhost:3000/auth/callback
-https://YOUR_DEPLOYED_DOMAIN/auth/callback
-```
-
-6. Open the Supabase SQL editor.
-7. Run `supabase/schema.sql`.
-8. Add the project URL and publishable key to `.env.local`:
+2. In Authentication settings, enable Anonymous Sign-Ins.
+3. Open the Supabase SQL editor.
+4. Run `supabase/schema.sql`.
+5. Add the project URL and publishable key to `.env.local`:
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 ```
 
-9. Restart the development server:
+6. Restart the development server:
 
 ```bash
 npm run dev
@@ -247,9 +241,7 @@ The schema uses Row Level Security, authenticated `auth.uid()` membership checks
 * `end_room`
 * `heartbeat_room_member`
 
-Do not add a Supabase service-role key to `.env.local` or any frontend environment. Soryvo only needs the publishable key for its passwordless sign-in flow.
-
-Email addresses stay inside Supabase Auth and are not written into public room tables. Participants only see display names, goals, and broad study statuses.
+Do not add a Supabase service-role key to `.env.local` or any frontend environment. Soryvo only needs the publishable key for guest access. Entered email addresses remain local and are not written into public room tables; room participants see display names, goals, and broad study statuses only.
 
 ## LiveKit Setup
 

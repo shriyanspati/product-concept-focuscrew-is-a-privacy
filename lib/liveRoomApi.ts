@@ -1,6 +1,6 @@
 "use client";
 
-import { ensureEmailSession, getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabaseClient";
+import { ensureLiveRoomSession, getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabaseClient";
 import type {
   FocusCheckStoredState,
   Participant,
@@ -74,7 +74,7 @@ export async function createLiveRoom(input: {
   subject?: string;
   title?: string;
 }) {
-  await ensureEmailSession();
+  await ensureLiveRoomSession();
   const supabase = requireSupabase();
   const { data, error } = await supabase.rpc("create_live_room", {
     display_name_input: input.displayName,
@@ -85,7 +85,7 @@ export async function createLiveRoom(input: {
   });
 
   if (error) {
-    throw new Error(error.message);
+    throw new Error(formatLiveRoomError(error.message));
   }
 
   return normalizePayload(data as LiveRoomPayload);
@@ -96,7 +96,7 @@ export async function joinLiveRoom(input: {
   displayName: string;
   goal: string;
 }) {
-  await ensureEmailSession();
+  await ensureLiveRoomSession();
   const supabase = requireSupabase();
   const { data, error } = await supabase.rpc("join_live_room", {
     room_code_input: input.roomCode.toUpperCase(),
@@ -105,7 +105,7 @@ export async function joinLiveRoom(input: {
   });
 
   if (error) {
-    throw new Error(error.message);
+    throw new Error(formatLiveRoomError(error.message));
   }
 
   return normalizePayload(data as LiveRoomPayload);
@@ -290,6 +290,18 @@ function requireSupabase() {
   }
 
   return supabase;
+}
+
+function formatLiveRoomError(message: string) {
+  if (message.includes("Could not find the function public.create_live_room")) {
+    return "Supabase room functions are not installed. Run supabase/schema.sql in the Supabase SQL Editor, then retry.";
+  }
+
+  if (message.includes("Could not find the function public.join_live_room")) {
+    return "Supabase room functions are not installed. Run supabase/schema.sql in the Supabase SQL Editor, then retry.";
+  }
+
+  return message;
 }
 
 function mapRoom(row: RoomRow): Room {

@@ -35,6 +35,10 @@ create table if not exists public.rooms (
 alter table public.rooms
   add column if not exists ended_at timestamptz;
 
+update public.rooms
+set break_minutes = 5
+where break_minutes <> 5;
+
 create table if not exists public.room_members (
   id uuid primary key default gen_random_uuid(),
   room_id uuid not null references public.rooms(id) on delete cascade,
@@ -210,12 +214,7 @@ returns integer
 language sql
 immutable
 as $$
-  select case
-    when focus_input = 15 then 3
-    when focus_input = 25 then 5
-    when focus_input in (45, 60) then 10
-    else 5
-  end;
+    select 5;
 $$;
 
 create or replace function public.room_payload(target_room_id uuid, target_member_id uuid)
@@ -483,10 +482,21 @@ begin
     raise exception 'Only the room creator can start break.';
   end if;
 
+  if not exists (
+    select 1
+    from public.rooms
+    where id = room_id_input
+      and phase = 'focus'
+      and phase_ends_at <= now()
+  ) then
+    raise exception 'The five-minute break unlocks when the focus timer finishes.';
+  end if;
+
   update public.rooms
   set phase = 'break',
       phase_started_at = now(),
-      phase_ends_at = now() + (break_minutes || ' minutes')::interval,
+      break_minutes = 5,
+      phase_ends_at = now() + interval '5 minutes',
       is_running = true
   where id = room_id_input;
 
@@ -610,3 +620,6 @@ grant execute on function public.end_break(uuid) to authenticated;
 grant execute on function public.end_room(uuid) to authenticated;
 grant execute on function public.leave_room(uuid) to authenticated;
 grant execute on function public.heartbeat_room_member(uuid, public.participant_status) to authenticated;
+
+-- Ensure PostgREST sees newly created or updated room RPCs immediately.
+notify pgrst, 'reload schema';

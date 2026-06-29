@@ -6,13 +6,16 @@ import {
   createLocalVideoTrack,
   LocalAudioTrack,
   LocalVideoTrack,
+  RemoteAudioTrack,
+  RemoteVideoTrack,
   Room as LiveKitRoom,
-  RoomEvent
+  RoomEvent,
+  Track
 } from "livekit-client";
 import { Coffee, ShieldCheck } from "lucide-react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { BreakCallControls } from "@/components/BreakCallControls";
-import { BreakParticipantGrid } from "@/components/BreakParticipantGrid";
+import { BreakParticipantGrid, type BreakRemoteParticipant } from "@/components/BreakParticipantGrid";
 import { getSupabaseBrowserClient } from "@/lib/supabaseClient";
 
 type BreakLoungeProps = {
@@ -34,7 +37,7 @@ type MediaDevice = {
 
 export const BreakLounge = forwardRef<BreakLoungeHandle, BreakLoungeProps>(function BreakLounge({ open, roomId, displayName, demoMode = false }, ref) {
   const [liveRoom, setLiveRoom] = useState<LiveKitRoom | null>(null);
-  const [remoteNames, setRemoteNames] = useState<string[]>([]);
+  const [remoteParticipants, setRemoteParticipants] = useState<BreakRemoteParticipant[]>([]);
   const [joining, setJoining] = useState(false);
   const [joined, setJoined] = useState(false);
   const [message, setMessage] = useState("");
@@ -81,7 +84,7 @@ export const BreakLounge = forwardRef<BreakLoungeHandle, BreakLoungeProps>(funct
       setMicEnabled(false);
       setCameraEnabled(false);
       setJoined(false);
-      setRemoteNames([]);
+      setRemoteParticipants([]);
     }
   }, []);
 
@@ -112,14 +115,34 @@ export const BreakLounge = forwardRef<BreakLoungeHandle, BreakLoungeProps>(funct
     }
 
     const syncParticipants = () => {
-      setRemoteNames(
-        Array.from(liveRoom.remoteParticipants.values()).map((participant) => participant.name || "Room member")
+      setRemoteParticipants(
+        Array.from(liveRoom.remoteParticipants.values()).map((participant) => {
+          const cameraPublication = participant.getTrackPublication(Track.Source.Camera);
+          const microphonePublication = participant.getTrackPublication(Track.Source.Microphone);
+          const cameraTrack = cameraPublication?.track;
+          const microphoneTrack = microphonePublication?.track;
+
+          return {
+            id: participant.identity,
+            name: participant.name || "Room member",
+            videoTrack: cameraTrack?.kind === Track.Kind.Video ? cameraTrack as RemoteVideoTrack : null,
+            audioTrack: microphoneTrack?.kind === Track.Kind.Audio ? microphoneTrack as RemoteAudioTrack : null,
+            cameraEnabled: Boolean(cameraTrack && !cameraPublication?.isMuted),
+            micEnabled: Boolean(microphoneTrack && !microphonePublication?.isMuted)
+          };
+        })
       );
     };
 
     liveRoom
       .on(RoomEvent.ParticipantConnected, syncParticipants)
       .on(RoomEvent.ParticipantDisconnected, syncParticipants)
+      .on(RoomEvent.TrackPublished, syncParticipants)
+      .on(RoomEvent.TrackUnpublished, syncParticipants)
+      .on(RoomEvent.TrackSubscribed, syncParticipants)
+      .on(RoomEvent.TrackUnsubscribed, syncParticipants)
+      .on(RoomEvent.TrackMuted, syncParticipants)
+      .on(RoomEvent.TrackUnmuted, syncParticipants)
       .on(RoomEvent.Disconnected, syncParticipants);
 
     syncParticipants();
@@ -128,6 +151,12 @@ export const BreakLounge = forwardRef<BreakLoungeHandle, BreakLoungeProps>(funct
       liveRoom
         .off(RoomEvent.ParticipantConnected, syncParticipants)
         .off(RoomEvent.ParticipantDisconnected, syncParticipants)
+        .off(RoomEvent.TrackPublished, syncParticipants)
+        .off(RoomEvent.TrackUnpublished, syncParticipants)
+        .off(RoomEvent.TrackSubscribed, syncParticipants)
+        .off(RoomEvent.TrackUnsubscribed, syncParticipants)
+        .off(RoomEvent.TrackMuted, syncParticipants)
+        .off(RoomEvent.TrackUnmuted, syncParticipants)
         .off(RoomEvent.Disconnected, syncParticipants);
     };
   }, [liveRoom]);
@@ -155,7 +184,6 @@ export const BreakLounge = forwardRef<BreakLoungeHandle, BreakLoungeProps>(funct
     if (demoMode) {
       setJoined(true);
       joinedRef.current = true;
-      setRemoteNames(simulatedNames);
       setMessage("Demo mode: no real call is connected.");
       return;
     }
@@ -224,23 +252,31 @@ export const BreakLounge = forwardRef<BreakLoungeHandle, BreakLoungeProps>(funct
       return;
     }
 
-    if (audioTrack) {
-      if (micEnabled) {
-        await audioTrack.mute();
-        setMicEnabled(false);
-      } else {
-        await audioTrack.unmute();
-        setMicEnabled(true);
-      }
-      return;
-    }
+    setMessage("");
+    let newTrack: LocalAudioTrack | null = null;
 
-    const track = await createLocalAudioTrack(selectedMic ? { deviceId: selectedMic } : undefined);
-    await liveRoom.localParticipant.publishTrack(track);
-    audioTrackRef.current = track;
-    setAudioTrack(track);
-    setMicEnabled(true);
-    await refreshDevices();
+    try {
+      if (audioTrack) {
+        if (micEnabled) {
+          await audioTrack.mute();
+          setMicEnabled(false);
+        } else {
+          await audioTrack.unmute();
+          setMicEnabled(true);
+        }
+        return;
+      }
+
+      newTrack = await createLocalAudioTrack(selectedMic ? { deviceId: selectedMic } : undefined);
+      await liveRoom.localParticipant.publishTrack(newTrack);
+      audioTrackRef.current = newTrack;
+      setAudioTrack(newTrack);
+      setMicEnabled(true);
+      await refreshDevices();
+    } catch (error) {
+      newTrack?.stop();
+      setMessage(getMediaErrorMessage(error, "microphone"));
+    }
   }
 
   async function toggleCamera() {
@@ -248,29 +284,37 @@ export const BreakLounge = forwardRef<BreakLoungeHandle, BreakLoungeProps>(funct
       return;
     }
 
-    if (videoTrack) {
-      if (cameraEnabled) {
-        await liveRoom.localParticipant.unpublishTrack(videoTrack);
-        videoTrack.stop();
-        videoTrackRef.current = null;
-        setVideoTrack(null);
-        setCameraEnabled(false);
-      } else {
-        const track = await createLocalVideoTrack(selectedCamera ? { deviceId: selectedCamera } : undefined);
-        await liveRoom.localParticipant.publishTrack(track);
-        videoTrackRef.current = track;
-        setVideoTrack(track);
-        setCameraEnabled(true);
-      }
-      return;
-    }
+    setMessage("");
+    let newTrack: LocalVideoTrack | null = null;
 
-    const track = await createLocalVideoTrack(selectedCamera ? { deviceId: selectedCamera } : undefined);
-    await liveRoom.localParticipant.publishTrack(track);
-    videoTrackRef.current = track;
-    setVideoTrack(track);
-    setCameraEnabled(true);
-    await refreshDevices();
+    try {
+      if (videoTrack) {
+        if (cameraEnabled) {
+          await liveRoom.localParticipant.unpublishTrack(videoTrack);
+          videoTrack.stop();
+          videoTrackRef.current = null;
+          setVideoTrack(null);
+          setCameraEnabled(false);
+        } else {
+          newTrack = await createLocalVideoTrack(selectedCamera ? { deviceId: selectedCamera } : undefined);
+          await liveRoom.localParticipant.publishTrack(newTrack);
+          videoTrackRef.current = newTrack;
+          setVideoTrack(newTrack);
+          setCameraEnabled(true);
+        }
+        return;
+      }
+
+      newTrack = await createLocalVideoTrack(selectedCamera ? { deviceId: selectedCamera } : undefined);
+      await liveRoom.localParticipant.publishTrack(newTrack);
+      videoTrackRef.current = newTrack;
+      setVideoTrack(newTrack);
+      setCameraEnabled(true);
+      await refreshDevices();
+    } catch (error) {
+      newTrack?.stop();
+      setMessage(getMediaErrorMessage(error, "camera"));
+    }
   }
 
   if (!open) {
@@ -350,11 +394,13 @@ export const BreakLounge = forwardRef<BreakLoungeHandle, BreakLoungeProps>(funct
         <div className="mt-5">
           <BreakParticipantGrid
             localName={displayName || "You"}
-            remoteNames={demoMode ? simulatedNames : remoteNames}
+            localVideoTrack={videoTrack}
+            remoteParticipants={remoteParticipants}
             joined={joined}
             micEnabled={micEnabled}
             cameraEnabled={cameraEnabled}
             demoMode={demoMode}
+            demoNames={simulatedNames}
           />
         </div>
 
@@ -374,3 +420,31 @@ export const BreakLounge = forwardRef<BreakLoungeHandle, BreakLoungeProps>(funct
     </AnimatePresence>
   );
 });
+
+function getMediaErrorMessage(error: unknown, device: "microphone" | "camera") {
+  const deviceLabel = device === "microphone" ? "Microphone" : "Camera";
+  const errorName = error instanceof DOMException
+    ? error.name
+    : error && typeof error === "object" && "name" in error
+      ? String(error.name)
+      : "";
+
+  if (errorName === "NotAllowedError" || errorName === "PermissionDeniedError") {
+    return `${deviceLabel} permission was denied. Allow ${device} access in the browser's site settings, then try again.`;
+  }
+
+  if (errorName === "NotFoundError" || errorName === "DevicesNotFoundError") {
+    return `No ${device} was found. Connect one and try again.`;
+  }
+
+  if (errorName === "NotReadableError" || errorName === "TrackStartError") {
+    return `The ${device} is already in use or unavailable. Close other calling apps and try again.`;
+  }
+
+  if (errorName === "OverconstrainedError" || errorName === "ConstraintNotSatisfiedError") {
+    return `The selected ${device} is no longer available. Choose another device and try again.`;
+  }
+
+  const detail = error instanceof Error ? error.message : "Unknown media error";
+  return `${deviceLabel} could not start: ${detail}`;
+}
