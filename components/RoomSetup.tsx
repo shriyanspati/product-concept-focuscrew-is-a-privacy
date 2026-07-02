@@ -35,9 +35,10 @@ function RoomSetupInner() {
   const [pendingAction, setPendingAction] = useState<"create" | "join">("create");
   const [liveError, setLiveError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [forceLocalPreview, setForceLocalPreview] = useState(searchParams.get("local") === "1");
   const reduceMotion = useReducedMotion();
   const liveAvailable = liveRoomsAvailable();
-  const useLiveRooms = liveAvailable;
+  const useLiveRooms = liveAvailable && !forceLocalPreview;
   const rhythm = getSessionRhythm(duration);
   const ticketGoal = goal.trim() || "Your first clear task will show here";
   const ticketSubject = subject || "Study session";
@@ -220,6 +221,38 @@ function RoomSetupInner() {
           <p className="mt-4 text-lg leading-8 text-muted">
             Pick a goal, choose a focus block, and send your friends the code.
           </p>
+          <div className="mt-6 inline-flex rounded-control border border-border bg-surface p-1" aria-label="Room mode">
+            <button
+              type="button"
+              onClick={() => {
+                setForceLocalPreview(false);
+                setLiveError("");
+              }}
+              disabled={!liveAvailable}
+              className={`rounded-small px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${
+                useLiveRooms ? "bg-focus text-white" : "text-muted hover:bg-surfaceHover hover:text-primary"
+              }`}
+            >
+              Live Room
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setForceLocalPreview(true);
+                setLiveError("");
+              }}
+              className={`rounded-small px-4 py-2 text-sm font-semibold transition ${
+                !useLiveRooms ? "bg-focus text-white" : "text-muted hover:bg-surfaceHover hover:text-primary"
+              }`}
+            >
+              Local Preview
+            </button>
+          </div>
+          <p className="mt-3 text-sm text-muted">
+            {useLiveRooms
+              ? "Live Room syncs participants and timers through Supabase."
+              : "Local Preview runs entirely in this browser and needs no account or backend."}
+          </p>
         </div>
 
         <div className="grid gap-10 lg:grid-cols-[minmax(0,1.65fr)_minmax(18rem,0.9fr)] lg:items-start">
@@ -357,13 +390,13 @@ function RoomSetupInner() {
           </aside>
         </div>
 
-        {liveAvailable ? (
+        {useLiveRooms ? (
           <p className="mt-10 border-t border-border pt-5 text-sm text-muted">
             Guest access uses a private temporary session. No password or email verification is required.
           </p>
-        ) : !liveAvailable && (
+        ) : (
           <p className="mt-10 border-t border-border pt-5 text-sm text-muted">
-            Live rooms are unavailable in this local preview. You can still try the sample room.
+            Local Preview keeps this room on your device. Invite links and realtime multiplayer are disabled.
           </p>
         )}
       </div>

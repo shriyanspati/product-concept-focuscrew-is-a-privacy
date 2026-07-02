@@ -845,7 +845,7 @@ export function StudyRoom({ roomCode }: StudyRoomProps) {
       <div className="mx-auto mb-5 max-w-7xl space-y-2">
         {config.mode === "local" && (
           <p className="border-l-2 border-border pl-3 text-sm text-muted">
-            Local Preview Mode: live rooms need Supabase setup. The sample room is available now.
+            Local Preview Mode: this room stays in your browser and does not use realtime multiplayer.
           </p>
         )}
         {liveRoom.error && (
